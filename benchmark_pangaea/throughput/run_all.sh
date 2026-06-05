@@ -1,0 +1,11 @@
+python throughput.py task=regression dataset=agbdlite encoder=croma_optical decoder=reg_upernet preprocessing=reg_resize criterion=mse batch_size=32 --warmup 20 --iterations 100
+python throughput.py task=regression dataset=agbdlite encoder=dofa decoder=reg_upernet preprocessing=reg_resize criterion=mse batch_size=32 --warmup 20 --iterations 100
+python throughput.py task=regression dataset=agbdlite encoder=gfmswin decoder=reg_upernet preprocessing=reg_resize criterion=mse batch_size=32 --warmup 20 --iterations 100
+python throughput.py task=regression dataset=agbdlite encoder=prithvi decoder=reg_upernet preprocessing=reg_resize criterion=mse batch_size=32 --warmup 20 --iterations 100
+python throughput.py task=regression dataset=agbdlite encoder=remoteclip decoder=reg_upernet preprocessing=reg_resize criterion=mse batch_size=32 --warmup 20 --iterations 100
+python throughput.py task=regression dataset=agbdlite encoder=satlasnet_si decoder=reg_upernet preprocessing=reg_resize criterion=mse batch_size=32 --warmup 20 --iterations 100
+python throughput.py task=regression dataset=agbdlite encoder=scalemae decoder=reg_upernet preprocessing=reg_resize criterion=mse batch_size=32 --warmup 20 --iterations 100
+python throughput.py task=regression dataset=agbdlite encoder=spectralgpt decoder=reg_upernet preprocessing=reg_resize criterion=mse batch_size=32 --warmup 20 --iterations 100
+python throughput.py task=regression dataset=agbdlite encoder=ssl4eo_moco decoder=reg_upernet preprocessing=reg_resize criterion=mse batch_size=32 --warmup 20 --iterations 100
+python throughput.py task=regression dataset=agbdlite encoder=terramind_optical_tiny decoder=reg_upernet preprocessing=reg_resize criterion=mse batch_size=32 --warmup 20 --iterations 100
+python throughput.py task=regression dataset=agbdlite encoder=prithvi2_100m decoder=reg_upernet preprocessing=reg_resize criterion=mse batch_size=32 --warmup 20 --iterations 100

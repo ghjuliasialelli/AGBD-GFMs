@@ -1,0 +1,721 @@
+nohup: ignoring input
+==========================================
+Running: aef_agbd_star_gen_Africa.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 60824638-1
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_global.pkl for normalization values.
+Using file: AEF_statistics_2019-2020_global.pkl for AEF normalization values.
+Evaluating model 60824638-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #1 test RMSE: 29.27
+Evaluating model 60824638-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #2 test RMSE: 29.22
+Evaluating model 60824638-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #3 test RMSE: 29.24
+Ensemble test RMSE: 29.24±0.02
+
+
+
+==========================================
+Running: aef_agbd_star_gen_SouthAmerica.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 60824638-1
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_global.pkl for normalization values.
+Using file: AEF_statistics_2019-2020_global.pkl for AEF normalization values.
+Evaluating model 60824638-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #1 test RMSE: 25.62
+Evaluating model 60824638-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #2 test RMSE: 25.62
+Evaluating model 60824638-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #3 test RMSE: 25.63
+Ensemble test RMSE: 25.62±0.00
+
+
+
+==========================================
+Running: aef_agbd_star_gen_SouthAsia.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 60824638-1
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_global.pkl for normalization values.
+Using file: AEF_statistics_2019-2020_global.pkl for AEF normalization values.
+Evaluating model 60824638-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #1 test RMSE: 70.60
+Evaluating model 60824638-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #2 test RMSE: 70.43
+Evaluating model 60824638-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #3 test RMSE: 70.45
+Ensemble test RMSE: 70.49±0.08
+
+
+
+==========================================
+Running: aef_agbd_star_only_Africa.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 64424821-2
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_Africa.pkl for normalization values.
+Using file: AEF_statistics_2019-2020_Africa.pkl for AEF normalization values.
+Evaluating model 64424821-2...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #1 test RMSE: 29.12
+Evaluating model 64424821-2...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #2 test RMSE: 29.13
+Evaluating model 64424821-2...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #3 test RMSE: 29.13
+Ensemble test RMSE: 29.13±0.01
+
+
+
+==========================================
+Running: aef_agbd_star_only_SouthAmerica.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 64508409-3
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_SouthAmerica.pkl for normalization values.
+Using file: AEF_statistics_2019-2020_SouthAmerica.pkl for AEF normalization values.
+Evaluating model 64508409-3...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #1 test RMSE: 25.55
+Evaluating model 64508409-3...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #2 test RMSE: 25.57
+Evaluating model 64508409-3...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #3 test RMSE: 25.56
+Ensemble test RMSE: 25.56±0.01
+
+
+
+==========================================
+Running: aef_agbd_star_only_SouthAsia.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 64424821-1
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_SouthAsia.pkl for normalization values.
+Using file: AEF_statistics_2019-2020_SouthAsia.pkl for AEF normalization values.
+Evaluating model 64424821-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #1 test RMSE: 69.48
+Evaluating model 64424821-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #2 test RMSE: 69.51
+Evaluating model 64424821-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #3 test RMSE: 69.50
+Ensemble test RMSE: 69.50±0.01
+
+
+
+==========================================
+Running: aef_agbd_star_without_Africa.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 64424805-2
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_Europe-SouthAsia-Australasia-NorthAmerica-SouthAmerica.pkl for normalization values.
+Using file: AEF_statistics_2019-2020_Europe-SouthAsia-Australasia-NorthAmerica-SouthAmerica.pkl for AEF normalization values.
+Evaluating model 64424805-2...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #1 test RMSE: 33.59
+Evaluating model 64424805-2...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #2 test RMSE: 33.88
+Evaluating model 64424805-2...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #3 test RMSE: 33.68
+Ensemble test RMSE: 33.72±0.12
+
+
+
+==========================================
+Running: aef_agbd_star_without_SouthAmerica.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 64424805-3
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_Europe-SouthAsia-Australasia-Africa-NorthAmerica.pkl for normalization values.
+Using file: AEF_statistics_2019-2020_Europe-SouthAsia-Australasia-Africa-NorthAmerica.pkl for AEF normalization values.
+Evaluating model 64424805-3...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #1 test RMSE: 31.98
+Evaluating model 64424805-3...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #2 test RMSE: 31.94
+Evaluating model 64424805-3...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #3 test RMSE: 32.13
+Ensemble test RMSE: 32.02±0.08
+
+
+
+==========================================
+Running: aef_agbd_star_without_SouthAsia.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 64424805-1
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_Europe-Australasia-Africa-NorthAmerica-SouthAmerica.pkl for normalization values.
+Using file: AEF_statistics_2019-2020_Europe-Australasia-Africa-NorthAmerica-SouthAmerica.pkl for AEF normalization values.
+Evaluating model 64424805-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #1 test RMSE: 80.95
+Evaluating model 64424805-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #2 test RMSE: 80.53
+Evaluating model 64424805-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #3 test RMSE: 81.06
+Ensemble test RMSE: 80.85±0.23
+
+
+
+==========================================
+Running: aef_gen_Africa.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 59620113-1
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_global.pkl for normalization values.
+Using file: AEF_statistics_2019-2020_global.pkl for AEF normalization values.
+Evaluating model 59620113-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #1 test RMSE: 29.21
+Evaluating model 59620113-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #2 test RMSE: 29.18
+Evaluating model 59620113-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #3 test RMSE: 29.24
+Ensemble test RMSE: 29.21±0.02
+
+
+
+==========================================
+Running: aef_gen_SouthAmerica.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 59620113-1
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_global.pkl for normalization values.
+Using file: AEF_statistics_2019-2020_global.pkl for AEF normalization values.
+Evaluating model 59620113-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #1 test RMSE: 25.61
+Evaluating model 59620113-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #2 test RMSE: 25.63
+Evaluating model 59620113-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #3 test RMSE: 25.59
+Ensemble test RMSE: 25.61±0.01
+
+
+
+==========================================
+Running: aef_gen_SouthAsia.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 59620113-1
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_global.pkl for normalization values.
+Using file: AEF_statistics_2019-2020_global.pkl for AEF normalization values.
+Evaluating model 59620113-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #1 test RMSE: 69.70
+Evaluating model 59620113-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #2 test RMSE: 69.75
+Evaluating model 59620113-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #3 test RMSE: 69.79
+Ensemble test RMSE: 69.75±0.04
+
+
+
+==========================================
+Running: aef_only_Africa.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 64424763-2
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_Africa.pkl for normalization values.
+Using file: AEF_statistics_2019-2020_Africa.pkl for AEF normalization values.
+Evaluating model 64424763-2...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #1 test RMSE: 29.18
+Evaluating model 64424763-2...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #2 test RMSE: 29.17
+Evaluating model 64424763-2...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #3 test RMSE: 29.16
+Ensemble test RMSE: 29.17±0.01
+
+
+
+==========================================
+Running: aef_only_SouthAmerica.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 64424763-3
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_SouthAmerica.pkl for normalization values.
+Using file: AEF_statistics_2019-2020_SouthAmerica.pkl for AEF normalization values.
+Evaluating model 64424763-3...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #1 test RMSE: 25.62
+Evaluating model 64424763-3...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #2 test RMSE: 25.58
+Evaluating model 64424763-3...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #3 test RMSE: 25.65
+Ensemble test RMSE: 25.62±0.03
+
+
+
+==========================================
+Running: aef_only_SouthAsia.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 64424763-1
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_SouthAsia.pkl for normalization values.
+Using file: AEF_statistics_2019-2020_SouthAsia.pkl for AEF normalization values.
+Evaluating model 64424763-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #1 test RMSE: 69.43
+Evaluating model 64424763-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #2 test RMSE: 69.45
+Evaluating model 64424763-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #3 test RMSE: 69.42
+Ensemble test RMSE: 69.44±0.01
+
+
+
+==========================================
+Running: aef_without_Africa.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 64424736-2
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_Europe-SouthAsia-Australasia-NorthAmerica-SouthAmerica.pkl for normalization values.
+Using file: AEF_statistics_2019-2020_Europe-SouthAsia-Australasia-NorthAmerica-SouthAmerica.pkl for AEF normalization values.
+Evaluating model 64424736-2...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #1 test RMSE: 35.11
+Evaluating model 64424736-2...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #2 test RMSE: 34.97
+Evaluating model 64424736-2...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #3 test RMSE: 35.18
+Ensemble test RMSE: 35.08±0.09
+
+
+
+==========================================
+Running: aef_without_SouthAmerica.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 64424736-3
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_Europe-SouthAsia-Australasia-Africa-NorthAmerica.pkl for normalization values.
+Using file: AEF_statistics_2019-2020_Europe-SouthAsia-Australasia-Africa-NorthAmerica.pkl for AEF normalization values.
+Evaluating model 64424736-3...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #1 test RMSE: 31.97
+Evaluating model 64424736-3...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #2 test RMSE: 32.02
+Evaluating model 64424736-3...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #3 test RMSE: 32.16
+Ensemble test RMSE: 32.05±0.08
+
+
+
+==========================================
+Running: aef_without_SouthAsia.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 64424736-1
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_Europe-Australasia-Africa-NorthAmerica-SouthAmerica.pkl for normalization values.
+Using file: AEF_statistics_2019-2020_Europe-Australasia-Africa-NorthAmerica-SouthAmerica.pkl for AEF normalization values.
+Evaluating model 64424736-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #1 test RMSE: 98.94
+Evaluating model 64424736-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #2 test RMSE: 99.37
+Evaluating model 64424736-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #3 test RMSE: 99.70
+Ensemble test RMSE: 99.34±0.31
+
+
+
+==========================================
+Running: agbd_gen_Africa.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 60856555-1
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_global.pkl for normalization values.
+Evaluating model 60856555-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #1 test RMSE: 31.46
+Evaluating model 60856555-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #2 test RMSE: 31.41
+Evaluating model 60856555-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #3 test RMSE: 31.53
+Ensemble test RMSE: 31.47±0.05
+
+
+
+==========================================
+Running: agbd_gen_SouthAmerica.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 60856555-1
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_global.pkl for normalization values.
+Evaluating model 60856555-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #1 test RMSE: 27.73
+Evaluating model 60856555-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #2 test RMSE: 27.76
+Evaluating model 60856555-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #3 test RMSE: 27.82
+Ensemble test RMSE: 27.77±0.04
+
+
+
+==========================================
+Running: agbd_gen_SouthAsia.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 60856555-1
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_global.pkl for normalization values.
+Evaluating model 60856555-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #1 test RMSE: 73.52
+Evaluating model 60856555-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #2 test RMSE: 73.79
+Evaluating model 60856555-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #3 test RMSE: 73.64
+Ensemble test RMSE: 73.65±0.11
+
+
+
+==========================================
+Running: agbd_only_Africa.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 60736794-2
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_Africa.pkl for normalization values.
+Evaluating model 60736794-2...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #1 test RMSE: 31.41
+Evaluating model 60736794-2...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #2 test RMSE: 31.42
+Evaluating model 60736794-2...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #3 test RMSE: 31.41
+Ensemble test RMSE: 31.42±0.01
+
+
+
+==========================================
+Running: agbd_only_SouthAmerica.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 60736794-3
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_SouthAmerica.pkl for normalization values.
+Evaluating model 60736794-3...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #1 test RMSE: 28.88
+Evaluating model 60736794-3...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #2 test RMSE: 28.82
+Evaluating model 60736794-3...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #3 test RMSE: 28.86
+Ensemble test RMSE: 28.85±0.02
+
+
+
+==========================================
+Running: agbd_only_SouthAsia.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 60736794-1
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_SouthAsia.pkl for normalization values.
+Evaluating model 60736794-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #1 test RMSE: 77.22
+Evaluating model 60736794-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #2 test RMSE: 77.13
+Evaluating model 60736794-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #3 test RMSE: 77.16
+Ensemble test RMSE: 77.17±0.04
+
+
+
+==========================================
+Running: agbd_without_Africa.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 60736796-2
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_Europe-SouthAsia-Australasia-NorthAmerica-SouthAmerica.pkl for normalization values.
+Evaluating model 60736796-2...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #1 test RMSE: 40.92
+Evaluating model 60736796-2...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #2 test RMSE: 40.70
+Evaluating model 60736796-2...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  1575
+> Model #3 test RMSE: 40.73
+Ensemble test RMSE: 40.79±0.10
+
+
+
+==========================================
+Running: agbd_without_SouthAmerica.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 60866344-3
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_Europe-SouthAsia-Australasia-Africa-NorthAmerica.pkl for normalization values.
+Evaluating model 60866344-3...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #1 test RMSE: 42.45
+Evaluating model 60866344-3...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #2 test RMSE: 42.36
+Evaluating model 60866344-3...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  2378
+> Model #3 test RMSE: 42.39
+Ensemble test RMSE: 42.40±0.04
+
+
+
+==========================================
+Running: agbd_without_SouthAsia.sh
+==========================================
+Years: 2019 2020
+Mode: test
+Architecture: nico_film
+Models: 60736796-1
+Current Directory: /scratch3/gsialelli/EcosystemAnalysis/Models/Biomes
+Running on a local machine
+Using file: AGBD_statistics_2019-2020_Europe-Australasia-Africa-NorthAmerica-SouthAmerica.pkl for normalization values.
+Evaluating model 60736796-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #1 test RMSE: 79.34
+Evaluating model 60736796-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #2 test RMSE: 79.31
+Evaluating model 60736796-1...
+Unfreeze last layer (mean regressor)... args.freeze_last_mean=False
+Total number of steps:  770
+> Model #3 test RMSE: 79.18
+Ensemble test RMSE: 79.28±0.07
+
+
+

@@ -1,0 +1,45 @@
+_target_: agbd-lite/helper/config.yaml
+
+lite_chunk_size: 32 # the chunk size of the AGBD-Lite dataset
+
+latlon: False
+
+bands:
+  - B01
+  - B02
+  - B03
+  - B04
+  - B05
+  - B06
+  - B07
+  - B08
+  - B8A
+  - B09
+  - B11
+  - B12
+
+alos: True
+
+lc: False
+
+dem: False
+topo: False
+aspect: False
+slope: False
+
+s2_dates: False
+s2_day: False
+s2_doy: False
+
+patch_size: [25, 25]
+norm_strat: 'pct'
+
+eval_big: False
+
+target: 'agbd' # one of: 'agbd', 'rh98', 'biome'
+
+# Replace the paths below with your own paths
+paths:
+  h5: '/scratch3/gsialelli/patches/AGBD-Lite'
+  norm: '/scratch3/gsialelli/patches/AGBD-Lite/AGBD-Lite-statistics.pkl'
+  embeddings: '/scratch3/gsialelli/AGBD-GFM/agbd-lite/helper/embeddings_train.csv'

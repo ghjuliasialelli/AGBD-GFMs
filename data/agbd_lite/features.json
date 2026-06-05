@@ -1,0 +1,72 @@
+[
+  {
+    "keys": ["ALOS_bands"],
+    "dtype": "uint16",
+    "shape": [25, 25, 2]
+  },
+  {
+    "keys": ["DEM"],
+    "dtype": "int16",
+    "shape": [25, 25]
+  },
+  {
+    "keys": ["GEDI", "agbd"],
+    "dtype": "float32",
+    "shape": []
+  },
+  {
+    "keys": ["GEDI", "lat_decimal"],
+    "dtype": "float32",
+    "shape": []
+  },
+  {
+    "keys": ["GEDI", "lat_offset"],
+    "dtype": "uint8",
+    "shape": []
+  },
+  {
+    "keys": ["GEDI", "lon_decimal"],
+    "dtype": "float32",
+    "shape": []
+  },
+  {
+    "keys": ["GEDI", "lon_offset"],
+    "dtype": "uint8",
+    "shape": []
+  },
+  {
+    "keys": ["GEDI", "pft_class"],
+    "dtype": "uint8",
+    "shape": []
+  },
+  {
+    "keys": ["GEDI", "region_cla"],
+    "dtype": "uint8",
+    "shape": []
+  },
+  {
+    "keys": ["GEDI", "rh98"],
+    "dtype": "float32",
+    "shape": []
+  },
+  {
+    "keys": ["LC"],
+    "dtype": "uint8",
+    "shape": [25, 25, 2]
+  },
+  {
+    "keys": ["S2_bands"],
+    "dtype": "uint16",
+    "shape": [25, 25, 12]
+  },
+  {
+    "keys": ["Sentinel_metadata", "S2_boa_offset"],
+    "dtype": "uint8",
+    "shape": []
+  },
+  {
+    "keys": ["Sentinel_metadata", "S2_date"],
+    "dtype": "int16",
+    "shape": []
+  }
+]

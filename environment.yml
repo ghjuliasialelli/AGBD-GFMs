@@ -1,0 +1,29 @@
+name: agbd
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - cudatoolkit=11.8
+  - python=3.10.9
+  - pytorch
+  - torchaudio
+  - torchvision
+  - gcc=13.2
+  - geopandas
+  - h5py
+  - lightgbm
+  - lightning
+  - pandas
+  - pip
+  - rasterio
+  - scikit-image
+  - tqdm
+  - torchmetrics
+  - ipykernel
+  - ipdb
+  - pip:
+    - datasets
+    - huggingface-hub
+    - wandb
+    - aiohttp

@@ -1,0 +1,19 @@
+--extra-index-url https://download.pytorch.org/whl/cu118
+torch
+torchvision
+torchaudio
+lightning
+torchmetrics
+geopandas
+h5py
+lightgbm
+pandas
+rasterio
+scikit-image
+tqdm
+ipykernel
+ipdb
+datasets
+huggingface-hub
+wandb
+aiohttp

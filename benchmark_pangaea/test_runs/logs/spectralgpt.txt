@@ -1,0 +1,162 @@
+nohup: ignoring input
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /home/gsialelli/.netrc.
+wandb: Currently logged in as: ghjuliasialelli to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run nk0uay06
+wandb: Tracking run with wandb version 0.25.0
+wandb: Run data is saved locally in /scratch3/gsialelli/pangaea-bench/wandb/run-20260325_183616-nk0uay06
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Resuming run 20260323_103538_5cf898_spectralgpt_reg_upernet_agbdlite
+wandb: ⭐️ View project at https://wandb.ai/ghjuliasialelli/geofm-bench
+wandb: 🚀 View run at https://wandb.ai/ghjuliasialelli/geofm-bench/runs/nk0uay06
+INFO - 03/25/26 18:36:18 - 0:00:00 - ============ Initialized logger ============
+INFO - 03/25/26 18:36:18 - 0:00:00 - 'batch_size': 32,
+                                      'ckpt_dir': None,
+                                      'criterion': {'_target_': 'torch.nn.MSELoss'},
+                                      'data_replicate': 1,
+                                      'dataset': {'_target_': 'pangaea.datasets.agbdlite.AGBDLite',
+                                                  'auto_download': True,
+                                                  'bands': {'optical': ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7',
+                                                                        'B8', 'B8A', 'B9', 'B11', 'B12']},
+                                                  'classes': ['regression'],
+                                                  'data_max': {'optical': [1.4194, 2.1088, 1.9552, 1.856, 1.6232,
+                                                                           1.6055, 1.586, 1.7232, 1.593, 1.7081,
+                                                                           1.61, 1.6255]},
+                                                  'data_mean': {'optical': [0.1235409, 0.13345453, 0.15880638,
+                                                                            0.15243885, 0.20159355, 0.32084775,
+                                                                            0.35937154, 0.37473023, 0.38475886,
+                                                                            0.3847485, 0.28990296, 0.21002403]},
+                                                  'data_min': {'optical': [0.0001, 0.0001, 0.0283, 0.0218, 0.0795,
+                                                                           0.0695, 0.0794, 0.0524, 0.0846, 0.0037,
+                                                                           0.0974, 0.0977]},
+                                                  'data_std': {'optical': [0.023037845, 0.02647069, 0.030844089,
+                                                                           0.03733916, 0.041663107, 0.06969897,
+                                                                           0.08277564, 0.090343215, 0.086930655,
+                                                                           0.08083575, 0.075588495, 0.058553487]},
+                                                  'dataset_name': 'AGBDLite',
+                                                  'distribution': [1.0],
+                                                  'download_url': 'https://zenodo.org/api/records/18485030',
+                                                  'eval_big': False,
+                                                  'ignore_index': -1,
+                                                  'img_size': 25,
+                                                  'lite_chunk_size': 1,
+                                                  'multi_modal': False,
+                                                  'multi_temporal': False,
+                                                  'num_classes': 1,
+                                                  'root_path': './data/AGBDLite',
+                                                  'root_path_cluster': '/cluster/scratch/gsialelli',
+                                                  'target': 'agbd'},
+                                      'decoder': {'_target_': 'pangaea.decoders.upernet.RegUPerNet',
+                                                  'channels': 512,
+                                                  'encoder': None,
+                                                  'finetune': '${finetune}'},
+                                      'encoder': {'_target_': 'pangaea.encoders.spectralgpt_encoder.SpectralGPT_Encoder',
+                                                  'depth': 12,
+                                                  'download_url': 'https://zenodo.org/records/8412455/files/SpectralGPT+.pth',
+                                                  'embed_dim': 768,
+                                                  'encoder_weights': './pretrained_models/SpectralGPT+.pth',
+                                                  'in_chans': 12,
+                                                  'input_bands': {'optical': ['B1', 'B2', 'B3', 'B4', 'B5', 'B6',
+                                                                              'B7', 'B8', 'B8A', 'B9', 'B11',
+                                                                              'B12']},
+                                                  'input_size': 128,
+                                                  'mlp_ratio': 4,
+                                                  'num_heads': 12,
+                                                  'output_dim': 3072,
+                                                  'output_layers': [3, 5, 7, 11],
+                                                  'patch_size': 8,
+                                                  't_patch_size': 3},
+                                      'finetune': False,
+                                      'limited_label_strategy': 'stratified',
+                                      'limited_label_train': 1,
+                                      'limited_label_val': 1,
+                                      'lr_scheduler': {'_target_': 'pangaea.utils.schedulers.MultiStepLR',
+                                                       'lr_milestones': [0.6, 0.9],
+                                                       'optimizer': None,
+                                                       'total_iters': None},
+                                      'num_workers': 6,
+                                      'optimizer': {'_target_': 'torch.optim.AdamW',
+                                                    'betas': [0.9, 0.999],
+                                                    'lr': 0.0001,
+                                                    'params': None,
+                                                    'weight_decay': 0.05},
+                                      'preprocessing': {'test': {'_target_': 'pangaea.engine.data_preprocessor.Preprocessor',
+                                                                 'preprocessor_cfg': [{'_target_': 'pangaea.engine.data_preprocessor.ResizeToEncoder'},
+                                                                                      {'_target_': 'pangaea.engine.data_preprocessor.BandFilter'},
+                                                                                      {'_target_': 'pangaea.engine.data_preprocessor.NormalizeMinMax'},
+                                                                                      {'_target_': 'pangaea.engine.data_preprocessor.BandPadding'}]},
+                                                        'train': {'_target_': 'pangaea.engine.data_preprocessor.Preprocessor',
+                                                                  'preprocessor_cfg': [{'_target_': 'pangaea.engine.data_preprocessor.ResizeToEncoder'},
+                                                                                       {'_target_': 'pangaea.engine.data_preprocessor.BandFilter'},
+                                                                                       {'_target_': 'pangaea.engine.data_preprocessor.NormalizeMinMax'},
+                                                                                       {'_target_': 'pangaea.engine.data_preprocessor.BandPadding'}]},
+                                                        'val': {'_target_': 'pangaea.engine.data_preprocessor.Preprocessor',
+                                                                'preprocessor_cfg': [{'_target_': 'pangaea.engine.data_preprocessor.ResizeToEncoder'},
+                                                                                     {'_target_': 'pangaea.engine.data_preprocessor.BandFilter'},
+                                                                                     {'_target_': 'pangaea.engine.data_preprocessor.NormalizeMinMax'},
+                                                                                     {'_target_': 'pangaea.engine.data_preprocessor.BandPadding'}]}},
+                                      'seed': 234,
+                                      'stratification_bins': 3,
+                                      'task': {'evaluator': {'_target_': 'pangaea.engine.evaluator.RegEvaluator',
+                                                             'device': None,
+                                                             'exp_dir': None,
+                                                             'inference_mode': 'sliding',
+                                                             'sliding_inference_batch': 8,
+                                                             'use_wandb': '${use_wandb}',
+                                                             'val_loader': None},
+                                               'trainer': {'_target_': 'pangaea.engine.trainer.RegTrainer',
+                                                           'best_metric_key': 'MSE',
+                                                           'ckpt_interval': 20,
+                                                           'criterion': None,
+                                                           'device': None,
+                                                           'eval_interval': 1,
+                                                           'evaluator': None,
+                                                           'exp_dir': None,
+                                                           'log_interval': 100,
+                                                           'lr_scheduler': None,
+                                                           'model': None,
+                                                           'n_epochs': 80,
+                                                           'optimizer': None,
+                                                           'precision': 'fp32',
+                                                           'train_loader': None,
+                                                           'use_wandb': '${use_wandb}'}},
+                                      'test_batch_size': 32,
+                                      'test_num_workers': 6,
+                                      'train': True,
+                                      'use_final_ckpt': False,
+                                      'use_wandb': True,
+                                      'wandb_run_id': 'nk0uay06',
+                                      'work_dir': ''
+INFO - 03/25/26 18:36:18 - 0:00:00 - The experiment is stored in 20260323_103538_5cf898_spectralgpt_reg_upernet_agbdlite
+                                     
+INFO - 03/25/26 18:36:18 - 0:00:00 - Device used: cuda:0
+INFO - 03/25/26 18:36:22 - 0:00:04 - Built SpectralGPT.
+INFO - 03/25/26 18:36:26 - 0:00:08 - Built Reg_UPerNet for with SpectralGPT_Encoder encoder.
+AGBD-Lite files exist at data/AGBDLite. Skipping download.
+INFO - 03/25/26 18:36:28 - 0:00:11 - Loaded model from 20260323_103538_5cf898_spectralgpt_reg_upernet_agbdlite/checkpoint__best.pth for evaluation
+INFO - 03/25/26 19:47:39 - 1:11:21 - [test] ------- MSE and RMSE --------
+                                     [test]-------------------
+                                     MSE 	5074.000
+                                     [test]-------------------
+                                     RMSE 	 71.232
+wandb: updating run metadata
+wandb: uploading config.yaml; uploading output.log; uploading wandb-summary.json
+wandb: uploading history steps 185378-185378, summary, console lines 125-129
+wandb: 
+wandb: Run history:
+wandb:  test_MSE ▁
+wandb: test_RMSE ▁
+wandb: 
+wandb: Run summary:
+wandb:         epoch 31
+wandb: learning_rate 0.0001
+wandb:      test_MSE 5074
+wandb:     test_RMSE 71.23202
+wandb:     train_MSE 4903.33516
+wandb:    train_loss 2861.09424
+wandb:       val_MSE 4382.70068
+wandb:      val_RMSE 66.20197
+wandb: 
+wandb: 🚀 View run 20260323_103538_5cf898_spectralgpt_reg_upernet_agbdlite at: https://wandb.ai/ghjuliasialelli/geofm-bench/runs/nk0uay06
+wandb: ⭐️ View project at: https://wandb.ai/ghjuliasialelli/geofm-bench
+wandb: Synced 8 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260325_183616-nk0uay06/logs
