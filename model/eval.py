@@ -9,13 +9,21 @@ in eval_parser(). In order to run the script, you can use bash eval/eval.sh.
 # Imports
 
 import os
+import sys
 from models import Net
 from wrapper import Model
 from dataset import GEDIDataset
 from torch.utils.data import DataLoader
 from torch import set_float32_matmul_precision
-import wandb
+# wandb is imported lazily, inside the AGBD_WANDB_LOOKUP branch below, so that evaluating
+# the released checkpoints offline does not require the package to be installed at all.
 from os.path import join, isdir, exists
+
+# config.py lives at the repo root, but this package is run with model/ as the working
+# directory, so the root has to be put on the path explicitly before importing it.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import get_paths, WANDB_ENTITY, WANDB_LOOKUP
+from wandb_cache import get_mapping_offline
 from os import mkdir
 import argparse
 import numpy as np
@@ -76,7 +84,7 @@ def get_mapping(api, arch) :
     - arch (str): the architecture of the model
     """
 
-    runs = api.runs(f"gs-tp-biomass/{arch}")
+    runs = api.runs(f"{WANDB_ENTITY}/{arch}")
     run_mapping, run_ckpt = {}, {}
     
     for run in runs:
@@ -106,38 +114,25 @@ if __name__ == '__main__' :
     if cpus_per_task is None: cpus_per_task = 16
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Define the local dataset paths
-    local_dataset_paths = {'h5':'/scratch3/gsialelli/patches', 
-                        'norm': '/scratch3/gsialelli/patches', 
-                        'map': '/scratch3/gsialelli/patches', 
-                        'ckpt': '/scratch3/gsialelli/EcosystemAnalysis/Models/Biomes/weights',
-                        'embeddings': '/scratch3/gsialelli/EcosystemAnalysis/Models/Baseline/cat2vec',
-                        'aef_h5': '/scratch3/gsialelli/patches/AEF',
-                        'aef_norm': '/scratch3/gsialelli/patches/AEF',
-                        'tessera_h5': '/scratch3/gsialelli/patches/TESSERA',
-                        'tessera_norm': '/scratch3/gsialelli/patches/TESSERA'}
-    if location == 'local' : 
-        dataset_path = local_dataset_paths
-        debug = False # TODO put back
-        local = True
-    else: 
-        dataset_path = {'h5':'/cluster/work/igp_psr/gsialelli/Data/patches', 
-                        'norm': '/cluster/work/igp_psr/gsialelli/Data/patches', 
-                        'map': '/cluster/work/igp_psr/gsialelli/Data/patches', 
-                        'ckpt': '/cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Biomes',
-                        'embeddings': '/cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Baseline/cat2vec',
-                        'aef_h5': '/cluster/work/igp_psr/gsialelli/Data/patches/AEF',
-                        'aef_norm': '/cluster/work/igp_psr/gsialelli/Data/patches/AEF',
-                        'tessera_h5': '/cluster/work/igp_psr/gsialelli/Data/patches/TESSERA',
-                        'tessera_norm': '/cluster/work/igp_psr/gsialelli/Data/patches/TESSERA'}
-        debug = False
-        local = False
+    # Dataset paths come from config.sh at the repo root -- edit that file (or set the
+    # matching environment variable) to run this elsewhere.
+    local = (location == 'local')
+    dataset_path = get_paths(local = local)
+    debug = False
 
-    # We get the config for one of the models
-    api = wandb.Api()
-    wandb_mapping, ckpt_mapping = get_mapping(api, arch)
-    wandb_name = wandb_mapping[models[0]]
-    cfg = api.run(f'gs-tp-biomass/{arch}/{wandb_name}').config
+    # We get the config for one of the models, either from wandb or -- when
+    # AGBD_WANDB_LOOKUP=false in config.sh -- from the offline cache committed to the repo.
+    # The cache exists because the checkpoints store a state_dict but no hyper_parameters,
+    # so without a config the released weights cannot be rebuilt into a model at all.
+    if WANDB_LOOKUP :
+        import wandb
+        api = wandb.Api()
+        wandb_mapping, ckpt_mapping = get_mapping(api, arch)
+        wandb_name = wandb_mapping[models[0]]
+        cfg = api.run(f'{WANDB_ENTITY}/{arch}/{wandb_name}').config
+    else :
+        wandb_mapping, ckpt_mapping, cfg_mapping = get_mapping_offline(arch, models)
+        cfg = cfg_mapping[models[0]]
     # Don't let training cfg clobber stats decoupling args set on the eval CLI.
     # years_stats / temp_ablation / trained_years are skipped because in older
     # training runs they may be unset, which would silently break stats loading.
@@ -217,8 +212,11 @@ if __name__ == '__main__' :
                     patch_size = args.patch_size, downsample = args.downsample, 
                     loss_fn = args.loss_fn, film = args.film, l2 = args.l2, crop = args.crop)
         
-            # Get the ckpt path from wandb
+            # Get the ckpt path from wandb, or from config.sh when the lookup is disabled.
+            # The two layouts differ because the training launchers do: AGBD_CLUSTER_CKPT
+            # is the parent of weights/, while AGBD_LOCAL_CKPT already is the weights dir.
             if local : ckpt_path = join(dataset_path['ckpt'], arch)
+            elif not WANDB_LOOKUP : ckpt_path = join(dataset_path['ckpt'], 'weights', arch)
             else: ckpt_path = ckpt_mapping[model_name]
             
             # Load the weights

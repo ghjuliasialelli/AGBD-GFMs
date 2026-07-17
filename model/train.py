@@ -8,6 +8,7 @@ This script is the entry point for training the models. It is called by train.sh
 # IMPORTS 
 
 import os
+import sys
 from models import Net
 from wrapper import Model
 from parser import setup_parser, check_args
@@ -22,9 +23,12 @@ from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint, TQDMProg
 from pytorch_lightning.callbacks import ModelCheckpoint
 import torch
 import logging
-from inference_helper import get_mapping
-import wandb
 import numpy as np
+
+# config.py lives at the repo root, but this package is run with model/ as the working
+# directory, so the root has to be put on the path explicitly before importing it.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import get_paths, WANDB_ENTITY
 
 # Debugging
 torch._logging.set_logs(dynamo=logging.DEBUG)
@@ -67,33 +71,23 @@ def main():
     print(f"num_devices={num_devices} cpus_per_task={cpus_per_task}")
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Running on a local machine
+    # Running on a local machine. Paths come from config.sh at the repo root -- edit that
+    # file (or set the matching environment variable) to run this elsewhere.
     if args.dataset_path == 'local' :
 
-        # Set the paths
-        machine = os.uname()[1]
-        if machine == 'pf-pc96' : 
-            local_dataset_paths = {'h5':'/scratch3/gsialelli', 
-                                'norm': '/scratch3/gsialelli', 
-                                'map': '/scratch3/gsialelli',
-                                'embeddings': '/scratch3/gsialelli'}
-        elif machine == 'pf-pc28' :
-            local_dataset_paths = {'h5':'/scratch3/gsialelli/patches', 
-                            'norm': '/scratch3/gsialelli/patches', 
-                            'map': '/scratch3/gsialelli/patches',
-                            'embeddings': f"/scratch3/gsialelli/EcosystemAnalysis/Models/Baseline/cat2vec/{'AGBD' if not args.lite else 'AGBD-Lite'}",
-                            'aef_h5': '/scratch3/gsialelli/patches/AEF',
-                            'aef_norm': '/scratch3/gsialelli/patches/AEF',
-                            'tessera_h5': '/scratch3/gsialelli/patches/TESSERA',
-                            'tessera_norm': '/scratch3/gsialelli/patches/TESSERA'}
-            num_devices = 1
-        else : raise Exception('Unknown machine: ', machine)
-        dataset_path = local_dataset_paths
-        
+        dataset_path = get_paths(local = True)
+
+        # The cat2vec embeddings are stored per-dataset, so pick the right subdirectory.
+        dataset_path['embeddings'] = join(dataset_path['embeddings'], 'AGBD-Lite' if args.lite else 'AGBD')
+
+        # pf-pc28 has a single usable GPU. Harmless elsewhere: it only ever lowers the
+        # count that was requested, and any other machine keeps args.num_gpus.
+        if os.uname()[1] == 'pf-pc28' : num_devices = 1
+
         debug = False # TODO put back
-    
-    # Running on the cluster
-    else: 
+
+    # Running on the cluster: everything has been staged into one directory ($TMPDIR).
+    else:
         dataset_path = {k:args.dataset_path for k in ['h5', 'norm', 'map', 'embeddings', 'aef_h5', 'aef_norm', 'tessera_h5', 'tessera_norm']}
         debug = False
     
@@ -103,11 +97,11 @@ def main():
     model_name = args.model_name.split('/')[-1]
     if model_name == 'local' :
         # if training locally, give a random wandb name
-        wandb_logger = WandbLogger(entity = 'gs-tp-biomass', project = args.arch, log_model = False)
+        wandb_logger = WandbLogger(entity = WANDB_ENTITY, project = args.arch, log_model = False)
         model_name = wandb_logger.experiment.name
     else:
         # if on the cluster, model_name is the JOB ID and MODEL ID in the ensemble
-        wandb_logger = WandbLogger(entity = 'gs-tp-biomass', project = args.arch, name = model_name, log_model = False)
+        wandb_logger = WandbLogger(entity = WANDB_ENTITY, project = args.arch, name = model_name, log_model = False)
 
     # Define the trainer
     trainer = Trainer(max_epochs = args.n_epochs,
@@ -124,34 +118,21 @@ def main():
     wandb_logger.experiment.config.update({'num_devices': num_devices, 'cpus_per_task': cpus_per_task, 'debug': debug})
 
     # Build the network based on the architecture requested
-    assert args.arch in ['lp', 'mlp', 'fcn', 'unet', 'nico', 'unet_pretrained', 'unet_film', 'nico_film', 'unet_gaussian', 'nico_gaussian', 'unet_film_pretrained', 'effunet'], f'unknown architecture {args.arch}'
+    # These are exactly the architectures Net() implements (see models.py); anything else
+    # raises NotImplementedError one line later. The list used to name nine more (fcn, unet,
+    # nico, unet_film, effunet, ...) that were left behind when those models were dropped,
+    # so the assert passed and the failure surfaced further down as a confusing error.
+    assert args.arch in ['lp', 'mlp', 'nico_film'], f'unknown architecture {args.arch}'
 
     # Define the model (pytorch model)
-    if args.pretrained_model != 'None' :
-        print('Loading pretrained model...')
-        api = wandb.Api()
-        wandb_mapping = get_mapping(api, args.arch)
-        wandb_name = wandb_mapping[args.pretrained_model]
-        cfg = api.run(f'gs-tp-biomass/{args.arch}/{wandb_name}').config
-        model = Net(model_name = args.arch, in_features = cfg['in_features'], num_outputs = cfg['num_outputs'],
-                    downsample = cfg['downsample'],
-                    patch_size = cfg['patch_size'], local = (args.dataset_path == 'local'),
-                    device = device, biome_dim = cfg['biome_dim'],
-                    emb_dim = cfg['emb_dim'], num_sepconv_blocks = cfg['num_sepconv_blocks'], num_sepconv_filters = cfg['num_sepconv_filters'], long_skip = cfg['long_skip'],
-                    only_entry = cfg['only_entry'], linear_emb = cfg['linear_emb'], padding_mode = cfg['padding_mode'], returns = cfg['returns'],
-                    predict = cfg['predict'])
-        state_dict = torch.load(join(args.model_path, f'{args.pretrained_model}_best.ckpt'), weights_only = True)['state_dict']
-        state_dict = {key.replace('model.', '', 1): value for key, value in state_dict.items() if not 'teacher' in key}
-        model.load_state_dict(state_dict)
-    else:
-        model = Net(model_name = args.arch, in_features = args.in_features, num_outputs = args.num_outputs, 
-                    downsample = None,
-                    patch_size = args.patch_size,
-                    local = (args.dataset_path == 'local'), device = device, biome_dim = args.biome_dim, emb_dim = args.emb_dim,
-                    num_sepconv_blocks = args.num_sepconv_blocks, 
-                    num_sepconv_filters = args.num_sepconv_filters, long_skip = args.long_skip, only_entry = args.only_entry,
-                    linear_emb = args.linear_emb, padding_mode = args.padding_mode, returns = args.returns, sigreg_lambda = args.sigreg_lambda,
-                    predict = args.predict)
+    model = Net(model_name = args.arch, in_features = args.in_features, num_outputs = args.num_outputs,
+                downsample = None,
+                patch_size = args.patch_size,
+                local = (args.dataset_path == 'local'), device = device, biome_dim = args.biome_dim, emb_dim = args.emb_dim,
+                num_sepconv_blocks = args.num_sepconv_blocks,
+                num_sepconv_filters = args.num_sepconv_filters, long_skip = args.long_skip, only_entry = args.only_entry,
+                linear_emb = args.linear_emb, padding_mode = args.padding_mode, returns = args.returns, sigreg_lambda = args.sigreg_lambda,
+                predict = args.predict)
 
     # Define the Model (pytorch lightning wrapper)
     model = Model(model, lr = args.lr, step_size = args.step_size, gamma = args.gamma, 

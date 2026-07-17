@@ -10,6 +10,15 @@
 #SBATCH --gpus=1
 #SBATCH --gres=gpumem:16g
 
+# --- AGBD-GFMs config ----------------------------------------------------------
+# Locate config.sh at the repo root (walk up from the working directory) and
+# source it: provides $AGBD_ENV and every AGBD_* path used below. Launchers are
+# meant to be run from inside the repo (the model/ directory for train & eval).
+_agbd_dir="$(pwd)"
+while [ "$_agbd_dir" != "/" ] && [ ! -f "$_agbd_dir/config.sh" ]; do _agbd_dir="$(dirname "$_agbd_dir")"; done
+if [ ! -f "$_agbd_dir/config.sh" ]; then echo "config.sh not found; run from inside the AGBD-GFMs repo" >&2; exit 1; fi
+source "$_agbd_dir/config.sh"
+
 ##################################################################################################################
 # TO EDIT ########################################################################################################
 years=(2019 2020)
@@ -47,20 +56,20 @@ current_directory=$(pwd)
 echo "Current Directory: $current_directory"
 first_part=$(echo "$current_directory" | cut -d'/' -f2)
 
-if [ "$first_part" == "cluster" ]; then
+if [ "$AGBD_ENV" == "cluster" ]; then
     echo "Running on a cluster"
 
     module load stack/2024-06 gcc/12.2.0
     module load stack/2024-06 python_cuda/3.11.6
-    source /cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Biomes/agbd/bin/activate
+    source ${AGBD_CLUSTER_VENV}
 
     dataset_path=$TMPDIR
-    plot_folder="/cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Biomes/eval_plots/"
+    plot_folder="${AGBD_CLUSTER_PLOTS}/"
 
-elif [ "$first_part" == "scratch3" ]; then
+elif [ "$AGBD_ENV" != "cluster" ]; then
     echo "Running on a local machine"
     dataset_path='local'
-    plot_folder='/scratch3/gsialelli/EcosystemAnalysis/Models/Biomes/eval_plots/'
+    plot_folder="${AGBD_LOCAL_PLOTS}/"
 
 else
     echo "Environment unknown"

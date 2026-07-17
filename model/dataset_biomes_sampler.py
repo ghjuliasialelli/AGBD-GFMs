@@ -768,6 +768,14 @@ class HelperSampler(Sampler):
 
 if __name__ == '__main__' :
 
+    # Paths come from config.sh at the repo root (see config.py), so this self-test
+    # runs anywhere. config.py lives at the repo root, which is not on the path when
+    # this module is run from model/.
+    import os, sys
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from config import get_paths
+    _paths = get_paths(local = True)
+
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
     args.latlon = True
@@ -789,7 +797,7 @@ if __name__ == '__main__' :
     for mode in ['val', 'test', 'train'] :
         print('Processing {} data...'.format(mode))
         
-        ds = GEDIDataset_biomes({'h5':'/scratch3/gsialelli/patches', 'norm': '/scratch3/gsialelli/patches', 'map': '/scratch3/gsialelli/BiomassDatasetCreation/Data/download_Sentinel/biomes_split'}, mode = mode, args = args, debug = True, years = [2019])
+        ds = GEDIDataset_biomes({'h5': _paths['h5'], 'norm': _paths['norm'], 'map': _paths['map']}, mode = mode, args = args, debug = True, years = [2019])
         print(type(ds))
 
         sampler = PerBiomeDistributedSampler(ds, batch_size = args.batch_size)

@@ -1,0 +1,210 @@
+task:
+  trainer:
+    _target_: pangaea.engine.trainer.RegTrainer
+    model: null
+    train_loader: null
+    optimizer: null
+    lr_scheduler: null
+    evaluator: null
+    exp_dir: null
+    device: null
+    criterion: null
+    n_epochs: 80
+    precision: fp32
+    ckpt_interval: 20
+    eval_interval: 0.25
+    log_interval: 100
+    best_metric_key: MSE
+    use_wandb: ${use_wandb}
+  evaluator:
+    _target_: pangaea.engine.evaluator.RegEvaluator
+    val_loader: null
+    exp_dir: null
+    device: null
+    use_wandb: ${use_wandb}
+    inference_mode: sliding
+    sliding_inference_batch: 8
+dataset:
+  _target_: pangaea.datasets.agbd.AGBD
+  dataset_name: AGBD
+  root_path: /scratch3/gsialelli/patches
+  download_url: null
+  auto_download: false
+  img_size: 25
+  multi_temporal: false
+  multi_modal: false
+  root_path_cluster: /cluster/scratch/gsialelli 
+  hold_out_region: null
+  keep_region: false
+  drop_overlaps: true
+  eval_lite: true
+  target: agbd
+  ignore_index: -1
+  num_classes: 1
+  classes:
+  - regression
+  distribution:
+  - 1.0
+  bands:
+    optical:
+    - B1
+    - B2
+    - B3
+    - B4
+    - B5
+    - B6
+    - B7
+    - B8
+    - B8A
+    - B9
+    - B11
+    - B12
+  data_mean:
+    optical:
+    - 0.1244767
+    - 0.13442503
+    - 0.15990143
+    - 0.15322255
+    - 0.2027034
+    - 0.32371777
+    - 0.3625338
+    - 0.3777227
+    - 0.38758147
+    - 0.38764006
+    - 0.29084504
+    - 0.21135607
+  data_std:
+    optical:
+    - 0.024913007
+    - 0.02851103
+    - 0.032457292
+    - 0.038697336
+    - 0.042601082
+    - 0.07086351
+    - 0.08404868
+    - 0.09149762
+    - 0.08816632
+    - 0.082269475
+    - 0.07562889
+    - 0.059278008
+  data_min:
+    optical:
+    - 0.0001
+    - 0.0001
+    - 0.0001
+    - 0.0001
+    - 0.0633
+    - 0.0502
+    - 0.0616
+    - 0.0278
+    - 0.055
+    - 0.0012
+    - 0.0954
+    - 0.0975
+  data_max:
+    optical:
+    - 1.7
+    - 2.1088
+    - 2.12
+    - 2.0032
+    - 1.7413
+    - 1.7228
+    - 1.7084
+    - 1.7312
+    - 1.688
+    - 1.7915
+    - 1.648
+    - 1.6775
+encoder:
+  _target_: pangaea.encoders.ssl4eo_moco_encoder.SSL4EO_MOCO_Encoder
+  encoder_weights: ./pretrained_models/B13_vits16_moco_0099.pth
+  download_url: https://drive.google.com/uc?id=1LREGuI6w7Gq6Xm0jFQdxxtp8QkmLvJWk&export=download&confirm=yes
+  embed_dim: 384
+  input_size: 224
+  in_chans: 13
+  patch_size: 16
+  num_heads: 6
+  depth: 12
+  mlp_ratio: 4
+  input_bands:
+    optical:
+    - B1
+    - B2
+    - B3
+    - B4
+    - B5
+    - B6
+    - B7
+    - B8
+    - B8A
+    - B9
+    - B10
+    - B11
+    - B12
+  output_layers:
+  - 3
+  - 5
+  - 7
+  - 11
+  output_dim: 384
+decoder:
+  _target_: pangaea.decoders.upernet.RegUPerNet
+  encoder: null
+  finetune: ${finetune}
+  channels: 512
+preprocessing:
+  train:
+    _target_: pangaea.engine.data_preprocessor.Preprocessor
+    preprocessor_cfg:
+    - _target_: pangaea.engine.data_preprocessor.ResizeToEncoder
+    - _target_: pangaea.engine.data_preprocessor.BandFilter
+    - _target_: pangaea.engine.data_preprocessor.NormalizeMinMax
+    - _target_: pangaea.engine.data_preprocessor.BandPadding
+  val:
+    _target_: pangaea.engine.data_preprocessor.Preprocessor
+    preprocessor_cfg:
+    - _target_: pangaea.engine.data_preprocessor.ResizeToEncoder
+    - _target_: pangaea.engine.data_preprocessor.BandFilter
+    - _target_: pangaea.engine.data_preprocessor.NormalizeMinMax
+    - _target_: pangaea.engine.data_preprocessor.BandPadding
+  test:
+    _target_: pangaea.engine.data_preprocessor.Preprocessor
+    preprocessor_cfg:
+    - _target_: pangaea.engine.data_preprocessor.ResizeToEncoder
+    - _target_: pangaea.engine.data_preprocessor.BandFilter
+    - _target_: pangaea.engine.data_preprocessor.NormalizeMinMax
+    - _target_: pangaea.engine.data_preprocessor.BandPadding
+criterion:
+  _target_: torch.nn.MSELoss
+lr_scheduler:
+  _target_: pangaea.utils.schedulers.MultiStepLR
+  optimizer: null
+  total_iters: null
+  lr_milestones:
+  - 0.6
+  - 0.9
+optimizer:
+  _target_: torch.optim.AdamW
+  params: null
+  lr: 0.0001
+  betas:
+  - 0.9
+  - 0.999
+  weight_decay: 0.05
+train: true
+work_dir: ''
+seed: 234
+use_wandb: true
+wandb_run_id: s5zs5z4c
+num_workers: 6
+batch_size: 32
+test_num_workers: 6
+test_batch_size: 32
+finetune: false
+ckpt_dir: null
+limited_label_train: 1
+limited_label_val: 1
+limited_label_strategy: stratified
+stratification_bins: 3
+data_replicate: 1
+use_final_ckpt: false

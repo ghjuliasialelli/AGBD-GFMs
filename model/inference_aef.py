@@ -12,6 +12,12 @@ The script can be executed by running: bash inference/inference_aef.sh.
 import time
 from os.path import join
 import os, pickle, argparse
+
+# config.py lives at the repo root, but this package is run with model/ as the working
+# directory, so the root has to be put on the path explicitly before importing it.
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import WANDB_ENTITY, get_paths
 import torch
 import numpy as np
 import rasterio as rs
@@ -50,7 +56,7 @@ def inf_parser():
     parser.add_argument('--year', type = int, required = True, help = 'Year to do inference on.')
     parser.add_argument('--models', type = str, nargs = '+', required = True, help = 'Model names')
     parser.add_argument('--arch', type = str, required = True, help = 'Architecture of the model')
-    parser.add_argument('--entity', type = str, default = 'gs-tp-biomass', help = 'wandb entity for the model.')
+    parser.add_argument('--entity', type = str, default = WANDB_ENTITY, help = 'wandb entity for the model.')
     parser.add_argument('--saving_dir', type = str, help = 'Directory in which to save the plots.')
     parser.add_argument("--tile_name", required = True, type = str, help = 'Tile on which to run the prediction.')
     parser.add_argument("--method", required = True, type = str, help = 'Method used for the composites.')
@@ -62,6 +68,7 @@ def inf_parser():
     parser.add_argument("--mode", type = str2bool, default = 'false', help = 'Whether to use mode for biome embedding.')
     parser.add_argument("--std", type = str2bool, default = 'true', help = 'Whether to compute and save the STDs in case of ensembling.')
     parser.add_argument("--factor", type = float, default = 5, help = 'Factor for the Gaussian weights.')
+    parser.add_argument("--skip_existing", action = 'store_true', help = 'Skip plots whose prediction already exists, i.e. resume an interrupted run. Off by default, so a plain run always recomputes everything; only pass this when you know the existing predictions were written by the same model and the same inputs.')
     args = parser.parse_args()
 
     return args, args.year, args.dataset_path, args.models, args.arch, args.saving_dir, args.tile_name, args.method, args.patch_size, args.pred_crop, args.masking, args.entity, args.dtype, args.mode, args.std, args.batch_size, args.factor
@@ -89,7 +96,10 @@ def load_input(paths, file_name, norm_values, masking = False):
 
     # Load the AEF embeddings ------------------------------------------------------------------------------------
     with rs.open(join(paths['aef'], f'{file_name}.tiff')) as src:
-        data = np.transpose(src.read(window = rs.windows.Window(0, 0, 1024, 1024)), axes = (1,2,0)).astype(np.float32)
+        # Read the FULL mosaic. A previous hardcoded Window(0, 0, 1024, 1024) silently dropped
+        # everything beyond the top-left 1024x1024 px; a 0.1 deg plot cell is ~1113 px tall at 10 m,
+        # so every plot lost its bottom strip (and low-latitude plots a right strip too).
+        data = np.transpose(src.read(), axes = (1,2,0)).astype(np.float32)
         meta = src.meta
         meta.update({'height': data.shape[0], 'width': data.shape[1]})
 
@@ -218,7 +228,7 @@ def get_mapping(api, arch) :
     - arch (str): the architecture of the model
     """
 
-    runs = api.runs(f"gs-tp-biomass/{arch}")
+    runs = api.runs(f"{WANDB_ENTITY}/{arch}")
     run_mapping, run_ckpt = {}, {}
     
     for run in runs:
@@ -306,32 +316,21 @@ def run_inference():
     cpus_per_task = os.environ.get('SLURM_CPUS_PER_TASK') if os.environ.get('SLURM_CPUS_PER_TASK') is not None else 8
     device  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Define the paths
-    if dataset_path == 'local' : 
-        dataset_path = {'h5':'/scratch3/gsialelli/patches', 
-                        'norm': '/scratch3/gsialelli/patches', 
-                        'map': '/scratch3/gsialelli/BiomassDatasetCreation/Data/download_Sentinel/biomes_split',
-                        'ckpt': '/scratch3/gsialelli/EcosystemAnalysis/Models/Biomes/weights',
-                        'embeddings': '/scratch3/gsialelli/EcosystemAnalysis/Models/Baseline/cat2vec',
-                        'aef': '/scratch3/gsialelli/AEF',
-                        'aef_h5': '/scratch3/gsialelli/patches/AEF',
-                        'aef_norm': '/scratch3/gsialelli/patches/AEF'}
-    else:
-        dataset_path = {'h5':'/cluster/work/igp_psr/gsialelli/Data/patches', 
-                        'norm': '/cluster/work/igp_psr/gsialelli/Data/patches', 
-                        'map': '/cluster/work/igp_psr/gsialelli/BiomassDatasetCreation/Data/download_Sentinel/biomes_split',
-                        'ckpt': '/cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Biomes',
-                        'embeddings': '/cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Baseline/cat2vec',
-                        'aef': '/cluster/work/igp_psr/gsialelli/Data/AEF',
-                        'aef_h5': '/cluster/work/igp_psr/gsialelli/Data/patches/AEF',
-                        'aef_norm': '/cluster/work/igp_psr/gsialelli/Data/patches/AEF'}
+    # Define the paths. These come from config.sh at the repo root -- edit that file (or set
+    # the matching environment variable) to run this elsewhere.
+    dataset_path = get_paths(local = (dataset_path == 'local'))
+
+    # Unlike train.py/eval.py, inference reads biomes_splits_to_name.pkl from the splits
+    # directory rather than from alongside the patches.
+    dataset_path['map'] = dataset_path['splits']
+
     dataset_path['saving_dir'] = saving_dir
 
     # We get the config for one of the models
     api = wandb.Api()
     wandb_mapping, ckpt_mapping = get_mapping(api, arch)
     wandb_name = wandb_mapping[models[0]]
-    cfg = api.run(f'gs-tp-biomass/{arch}/{wandb_name}').config
+    cfg = api.run(f'{WANDB_ENTITY}/{arch}/{wandb_name}').config
     for key, value in cfg.items(): setattr(args, key, value)
     args = init_args_dataset(args)
 
@@ -371,9 +370,15 @@ def run_inference():
     tif_files = [f for f in tif_files if f.stem == f.parent.name]
     file_names = [str(f.relative_to(dataset_path['aef'])).replace('.tiff', '') for f in tif_files]
 
+    output_path = join(dataset_path['saving_dir'], arch, '_'.join(models))
+
     for file_name in file_names :
 
         plot_id = file_name.split('/')[0]
+
+        if args.skip_existing and os.path.exists(os.path.join(output_path, f'{plot_id}.tif')) :
+            print(f'Skipping {plot_id} (prediction already exists).')
+            continue
 
         # file_name = '127/127'  # 'xqxrk5qbbjfp4kp3u-0000008192-0000008192'
         img, pred_mask, meta = load_input(dataset_path, file_name, norm_values, masking = masking)
@@ -416,7 +421,6 @@ def run_inference():
 
         # Save the AGB predictions to GeoTIFF, with dtype uint16
         meta.update(driver = 'GTiff', dtype = np_dtype, count = 2 if len(models) > 1 else 1, compress = 'lzw', nodata = nodata)
-        output_path = join(dataset_path['saving_dir'], arch, '_'.join(models))
         if not os.path.exists(output_path): os.makedirs(output_path)
         with rs.open(os.path.join(output_path, f'{plot_id}.tif'), 'w', **meta) as f:
             f.write(avg_preds_variables, 1)

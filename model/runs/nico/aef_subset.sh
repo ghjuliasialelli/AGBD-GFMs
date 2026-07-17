@@ -9,6 +9,15 @@
 #SBATCH --array=1-1
 #SBATCH --gpus=rtx_4090:1
 
+# --- AGBD-GFMs config ----------------------------------------------------------
+# Locate config.sh at the repo root (walk up from the working directory) and
+# source it: provides $AGBD_ENV and every AGBD_* path used below. Launchers are
+# meant to be run from inside the repo (the model/ directory for train & eval).
+_agbd_dir="$(pwd)"
+while [ "$_agbd_dir" != "/" ] && [ ! -f "$_agbd_dir/config.sh" ]; do _agbd_dir="$(dirname "$_agbd_dir")"; done
+if [ ! -f "$_agbd_dir/config.sh" ]; then echo "config.sh not found; run from inside the AGBD-GFMs repo" >&2; exit 1; fi
+source "$_agbd_dir/config.sh"
+
 ################################################################################################################################
 
 # Whether to use the normal AGBD dataset, or the AGBD-Lite dataset
@@ -18,6 +27,11 @@ lite_chunk_size=1 # chunk size to use when lite is true
 
 # Whether to use AEF embeddings
 aef="true"
+
+# Whether to use TESSERA embeddings (Lite only)
+tessera="false"
+
+# Subset of AEF embedding bands ("all" = the full 64). Drives --in_features only.
 aef_bands=(6 24 28 32 39 47) # or "all"
 drop_overlaps="true" # drop AGBD test patches that overlap with the AEF train set
 
@@ -31,12 +45,12 @@ current_directory=$(pwd)
 echo "Current Directory: $current_directory"
 first_part=$(echo "$current_directory" | cut -d'/' -f2)
 
-if [ "$first_part" == "cluster" ]
+if [ "$AGBD_ENV" == "cluster" ]
 then
 
     module load stack/2024-06 gcc/12.2.0
     module load stack/2024-06 python_cuda/3.11.6
-    source /cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Biomes/agbd/bin/activate
+    source ${AGBD_CLUSTER_VENV}
 
     JOB_ID=$SLURM_ARRAY_JOB_ID
     MODEL_IDX=${SLURM_ARRAY_TASK_ID:-0}
@@ -56,7 +70,7 @@ else
     NNODES=1
 fi
 
-if [ "$first_part" == "cluster" ]; then
+if [ "$AGBD_ENV" == "cluster" ]; then
     echo "Running on a cluster"
     
     if [ "$tmpdir" == "true" ]; then
@@ -64,31 +78,34 @@ if [ "$first_part" == "cluster" ]; then
     
         # Move the .h5 files, and the statistics
         if [ "$lite" == "true" ]; then
-            rclone copy /cluster/work/igp_psr/gsialelli/Data/patches/AGBD-Lite/ ${TMPDIR} --exclude "AGBD-test.h5" --include "*.h5" --include "AGBD-Lite-statistics.pkl" --transfers 16 --checkers 32
-            cp /cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Baseline/cat2vec/AGBD-Lite/embeddings_train_lite.csv ${TMPDIR}
-            cp /cluster/work/igp_psr/gsialelli/AGBD-GFM/agbd-lite/mapping_lite_to_og.pkl ${TMPDIR}
+            rclone copy ${AGBD_CLUSTER_H5}/AGBD-Lite/ ${TMPDIR} --exclude "AGBD-test.h5" --include "*.h5" --include "AGBD-Lite-statistics.pkl" --transfers 16 --checkers 32
+            cp ${AGBD_CLUSTER_EMBEDDINGS}/AGBD-Lite/embeddings_train_lite.csv ${TMPDIR}
+            cp ${AGBD_CLUSTER_AUX}/agbd-lite/mapping_lite_to_og.pkl ${TMPDIR}
             if [ "$lite_eval_big" == "true" ]; then
-                rclone copy /cluster/work/igp_psr/gsialelli/Data/patches/AGBD-Lite/AGBD-test.h5 ${TMPDIR} --transfers 16 --checkers 32
+                rclone copy ${AGBD_CLUSTER_H5}/AGBD-Lite/AGBD-test.h5 ${TMPDIR} --transfers 16 --checkers 32
             fi
         fi
         if [ "$lite" == "false" ]; then
-            rclone copy /cluster/work/igp_psr/gsialelli/Data/patches/ ${TMPDIR} --include "*v4_*-20.h5" --include "statistics_subset_2019-2020-v4*.pkl" --include "AGBD_statistics_2019-2020_global.pkl" --transfers 16 --checkers 32
+            rclone copy ${AGBD_CLUSTER_H5}/ ${TMPDIR} --include "*v4_*-20.h5" --include "statistics_subset_2019-2020-v4*.pkl" --include "AGBD_statistics_2019-2020_global.pkl" --transfers 16 --checkers 32
         fi
         if [ "$aef" == "true" ]; then
-            rclone copy /cluster/work/igp_psr/gsialelli/Data/patches/AEF/ ${TMPDIR} --include "*.h5" --include "*statistics*.pkl" --transfers 16 --checkers 32
+            rclone copy ${AGBD_CLUSTER_AEF_H5}/ ${TMPDIR} --include "*.h5" --include "*statistics*.pkl" --transfers 16 --checkers 32
+        fi
+        if [ "$tessera" == "true" ]; then
+            rclone copy ${AGBD_CLUSTER_TESSERA_H5}/ ${TMPDIR} --include "TESSERA-Lite-*.h5" --include "*statistics*.pkl" --transfers 16 --checkers 32
         fi
 
         # Other files
-        cp /cluster/work/igp_psr/gsialelli/Data/AGB/biomes_splits_to_name.pkl ${TMPDIR}
-        cp /cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Baseline/cat2vec/AGBD/embeddings_train.csv ${TMPDIR}
-        cp /cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Biomes/helper/tiles_per_region.pkl ${TMPDIR}
-        cp /cluster/work/igp_psr/gsialelli/AGBD-GFM/aef-dwn/AEF_overlaps.pkl ${TMPDIR}
+        cp ${AGBD_CLUSTER_AGB}/biomes_splits_to_name.pkl ${TMPDIR}
+        cp ${AGBD_CLUSTER_EMBEDDINGS}/AGBD/embeddings_train.csv ${TMPDIR}
+        cp ${AGBD_CLUSTER_HELPER}/tiles_per_region.pkl ${TMPDIR}
+        cp ${AGBD_CLUSTER_AUX}/aef-dwn/AEF_overlaps.pkl ${TMPDIR}
 
     else
         echo "Using SCRATCH for dataset"
     fi
 
-elif [ "$first_part" == "scratch3" ]; then
+elif [ "$AGBD_ENV" != "cluster" ]; then
     echo "Running on a local machine"
 else
     echo "Environment unknown"
@@ -259,7 +276,7 @@ geo_ablation="false"
 if [ "$geo_ablation" == "true" ]
 then
     regions=("Europe" "South Asia" "Australasia" "Africa" "North America" "South America")
-    if [ "$first_part" == "cluster" ]
+    if [ "$AGBD_ENV" == "cluster" ]
     then
         region_id=$SLURM_ARRAY_TASK_ID
     else
@@ -355,7 +372,6 @@ fi
 channel_dims=(32 32 64 128 128 128)
 leaky_relu="false"
 max_pool="false"
-freeze="false"
 
 # Training arguments
 n_epochs=14
@@ -473,14 +489,20 @@ then
     else
         num_aef_bands=${#aef_bands[@]}
     fi
-    in_features=$((in_features+num_aef_bands)) # + num_aef_bands for AEF embeddings
+    in_features=$((in_features+num_aef_bands)) # AEF embedding dims
+fi
+
+# tessera embeddings
+if [ "$tessera" == "true" ]
+then
+    in_features=$((in_features+128)) # + 128 because 128dim TESSERA embeddings
 fi
 
 # Output path and model name #####################################################################################
 
-if [ "$first_part" == "cluster" ]
+if [ "$AGBD_ENV" == "cluster" ]
 then
-    model_path=/cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Biomes/weights/${arch}
+    model_path=${AGBD_CLUSTER_CKPT}/weights/$"nico_film"
     if [ "$tmpdir" == "true" ]; then
         dataset_path=$TMPDIR
     else
@@ -488,7 +510,7 @@ then
     fi
     model_name=${model_path}/${JOB_ID}-${MODEL_IDX}
 else
-    model_path=/scratch3/gsialelli/EcosystemAnalysis/Models/Biomes/weights/${arch}
+    model_path=${AGBD_LOCAL_CKPT}/$"nico_film"
     dataset_path='local'
     model_name=${model_path}/local
 fi
@@ -501,6 +523,8 @@ torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=$NNODES --npro
         train.py    --model_path $model_path \
                     --model_name $model_name \
                     --dataset_path $dataset_path \
+                    --stats_hold_out_region "None" \
+                    --stats_keep_region "false" \
                     --augment "false" \
                     --norm "false" \
                     --arch $arch \
@@ -537,7 +561,6 @@ torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=$NNODES --npro
                     --patch_size ${patch_size[@]} \
                     --chunk_size $chunk_size \
                     --years ${years[@]} \
-                    --freeze $freeze \
                     --num_gpus $NGPUS \
                     --num_cpus $NCPUS \
                     --film $film \
@@ -589,9 +612,9 @@ torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=$NNODES --npro
                     --lite_eval_big $lite_eval_big \
                     --lite_chunk_size $lite_chunk_size \
                     --aef $aef \
+                    --tessera $tessera \
                     --hold_out_region $hold_out_region \
                     --predict $predict \
                     --ensemble $ensemble \
                     --n_members $n_members \
-                    --drop_overlaps $drop_overlaps \
-                    --aef_bands ${aef_bands[@]}
+                    --drop_overlaps $drop_overlaps

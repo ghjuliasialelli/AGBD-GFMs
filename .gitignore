@@ -1,3 +1,30 @@
+# working docs (local only, not shipped)
 CLEANUP_PLAN.md
 HANDOFF.md
 MISSING_FILES.md
+AEF_COVERAGE_TODO.md
+
+# python
+__pycache__/
+*.py[cod]
+
+# large model artifacts. Weights and cached predictions ARE tracked, up to GitHub's
+# 100 MB per-file limit; anything above that goes to Zenodo. The only current case is
+# the 461 MB full-AGBD PANGAEA checkpoint — its run config is tracked instead.
+*.pth
+benchmark_pangaea/full/runs/**/*.log-*
+
+# session generator/sweep tooling (not shipped)
+_launcher_tooling/
+
+# release-assembly working doc (not shipped)
+DATA_MANIFEST.md
+
+# Bulk data fetched by the download script (see DATA_MANIFEST.md).
+# The small statistics/aux .pkl and .csv under data/ ARE tracked.
+data/patches/**/*.h5
+data/patches/*.h5
+data/patches/subsampled_indices.pkl
+data/AEF/
+data/weights/
+data/eval_plots/

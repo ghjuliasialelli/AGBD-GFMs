@@ -6,12 +6,22 @@ via GDAL's /vsicurl/ and only saves the AOI extent. Works best with COG files.
 
 env: awsenv
 
+Usage: python download_aoi.py [--aois <path>] [--output_dir <dir>] [--download <bool>]
+         [--verify <bool>] [--force <bool>] [--num_workers <n>] [--buffer_m <m>]
+
+e.g.  python download_aoi.py --download true                 # first download of every AOI
+      python download_aoi.py --verify true                   # fetch whatever is missing
+      python download_aoi.py --verify true --force true      # re-fetch everything, even if present
+
 """
 
 ###################################################################################################
 # Imports
 
 import numpy as np
+import time
+import random
+import argparse
 import boto3
 from botocore import UNSIGNED
 from botocore.config import Config
@@ -26,7 +36,11 @@ import geopandas as gpd
 from shapely.geometry import Point, box as shapely_box, mapping
 
 ###################################################################################################
-# Helper functions
+# Helper functions and global variables
+
+AOIS = '/scratch3/gsialelli/EcosystemAnalysis/Models/Biomes/AGBRef/data/AGBref.gpkg'
+OUTPUT_DIR = '/scratch3/gsialelli/AEF'
+
 
 def _latlon_to_zone_path(lat, lon) :
     """
@@ -93,7 +107,7 @@ def _parse_pixel_offsets(uri) :
     return parts[0], int(parts[-2]), int(parts[-1])
 
 
-def _build_zone_index(uris, num_workers=16) :
+def _build_zone_index(uris, num_workers=8, num_retries=4, strict=True) :
     """
     This function builds a spatial index mapping each URI to its bounding box in UTM.
 
@@ -102,14 +116,32 @@ def _build_zone_index(uris, num_workers=16) :
     that prefix are then derived from their pixel offsets, avoiding redundant file opens.
     Note: y_res may be positive (south-up) or negative (north-up), both are handled correctly.
 
+    S3 throws transient errors when several tiles are opened at once, and a dropped prefix drops
+    every file it holds from the index, i.e. it silently truncates the AOIs that those files cover.
+    Each open is therefore retried with exponential backoff, and a prefix that still fails is
+    raised rather than skipped: a truncated index is worse than a failed run, because nothing
+    downstream can tell that it is truncated.
+
     Args:
     - uris (list): List of S3 URIs for all .tiff files in a zone/year.
     - num_workers (int): Number of parallel threads for metadata reads.
+    - num_retries (int): Number of attempts per prefix before giving up.
+    - strict (bool): If True, raise when a prefix cannot be read; if False, warn and skip it,
+                     which yields a silently incomplete index. Default True.
 
     Returns:
     - index (list): List of (uri, (minx, miny, maxx, maxy)) tuples in the zone's UTM CRS.
     """
-    gdal_env = {'GDAL_DISABLE_READDIR_ON_OPEN': 'EMPTY_DIR', 'CPL_VSIL_CURL_ALLOWED_EXTENSIONS': '.tiff'}
+    # GDAL_HTTP_MAX_RETRY/RETRY_DELAY make GDAL retry the HTTP request itself, which is what
+    # download_aoi() already does and what this function was missing: without them a throttled
+    # request fails outright, and /vsicurl/ reports it as "does not exist in the file system"
+    # rather than as the transient error it is. CPL_VSIL_CURL_NON_CACHED stops GDAL from caching
+    # that bogus negative result, which would otherwise make every retry replay the failure.
+    gdal_env = {'GDAL_DISABLE_READDIR_ON_OPEN': 'EMPTY_DIR',
+                'CPL_VSIL_CURL_ALLOWED_EXTENSIONS': '.tiff',
+                'CPL_VSIL_CURL_NON_CACHED': '/vsicurl/https://data.source.coop',
+                'GDAL_HTTP_MAX_RETRY': '5',
+                'GDAL_HTTP_RETRY_DELAY': '2'}
 
     # Group URIs by hash prefix
     by_prefix = defaultdict(list)
@@ -117,22 +149,40 @@ def _build_zone_index(uris, num_workers=16) :
         hash_prefix, row_off, col_off = _parse_pixel_offsets(uri)
         by_prefix[hash_prefix].append((uri, row_off, col_off))
 
+    def _read_prefix_transform(path_part) :
+        """
+        Open one tile and return (tile_h, tile_w, x_res, y_res, x_origin_term, y_origin_term),
+        retrying on the transient S3 errors that concurrent /vsicurl/ opens provoke.
+        """
+        last_error = None
+        for attempt in range(num_retries) :
+            try :
+                with rasterio.Env(**gdal_env) :
+                    with rasterio.open(f"/vsicurl/https://data.source.coop/{path_part}") as src :
+                        return src.transform, src.height, src.width
+            except Exception as e :
+                last_error = e
+                # Back off with jitter, so that retries of concurrent failures do not re-collide
+                if attempt < num_retries - 1 :
+                    time.sleep((2 ** attempt) * (1 + random.random()))
+        raise RuntimeError(f"Could not read {path_part} after {num_retries} attempts: {last_error}")
+
     def _get_prefix_bounds(item) :
         hash_prefix, tiles = item
         # Open the first tile of this prefix to get its spatial transform and tile size
         uri0, row_off0, col_off0 = tiles[0]
         path_part = '/'.join(uri0.split('/')[3:])
         try :
-            with rasterio.Env(**gdal_env) :
-                with rasterio.open(f"/vsicurl/https://data.source.coop/{path_part}") as src :
-                    t = src.transform
-                    tile_h, tile_w = src.height, src.width
-                    x_res, y_res = t.a, t.e
-                    # Back-calculate the dataset origin from this tile's transform and its offsets
-                    x_origin = t.c - col_off0 * x_res
-                    y_origin = t.f - row_off0 * y_res
-        except Exception :
+            t, tile_h, tile_w = _read_prefix_transform(path_part)
+        except RuntimeError as e :
+            if strict : raise
+            print(f"  WARNING: dropping prefix {hash_prefix} ({len(tiles)} file(s)): {e}")
             return []
+
+        x_res, y_res = t.a, t.e
+        # Back-calculate the dataset origin from this tile's transform and its offsets
+        x_origin = t.c - col_off0 * x_res
+        y_origin = t.f - row_off0 * y_res
 
         # Compute bounds for all tiles of this prefix using pixel offsets
         results = []
@@ -148,13 +198,14 @@ def _build_zone_index(uris, num_workers=16) :
 
     index = []
     with ThreadPoolExecutor(max_workers=num_workers) as executor :
+        # executor.map re-raises inside this loop, so a strict failure aborts the whole index
         for result_list in executor.map(_get_prefix_bounds, by_prefix.items()) :
             index.extend(result_list)
 
     return index
 
 
-def find_uris_for_aoi(geometry, year, s3, zone_index_cache=None, buffer_m=5100) :
+def find_uris_for_aoi(geometry, year, s3, zone_index_cache=None, buffer_m=5100, strict=True) :
     """
     This function finds the S3 URIs of AEF files that overlap with the given AOI.
 
@@ -171,6 +222,8 @@ def find_uris_for_aoi(geometry, year, s3, zone_index_cache=None, buffer_m=5100) 
                                Modified in-place when new zones are fetched.
     - buffer_m (float): Half-width in metres used when geometry is a point. Default 5100m
                         gives a ~10.2 km x 10.2 km box.
+    - strict (bool): Passed to _build_zone_index. If True (default), raise when a zone index
+                     cannot be built in full, rather than returning a partial file list.
 
     Returns:
     - uris (list): Unique S3 URIs for AEF files covering the AOI (may span multiple zones).
@@ -204,7 +257,7 @@ def find_uris_for_aoi(geometry, year, s3, zone_index_cache=None, buffer_m=5100) 
         # Build and cache the zone index if not done yet
         if key not in zone_index_cache :
             uris = _list_zone_uris(year, zone_path, s3)
-            zone_index_cache[key] = _build_zone_index(uris) if uris else []
+            zone_index_cache[key] = _build_zone_index(uris, strict=strict) if uris else []
 
         zone_index = zone_index_cache[key]
         if not zone_index : continue
@@ -225,7 +278,7 @@ def find_uris_for_aoi(geometry, year, s3, zone_index_cache=None, buffer_m=5100) 
     return list(set(all_uris))
 
 
-def download_aoi(uri, output_dir, geometry, aoi_id=None) :
+def download_aoi(uri, output_dir, geometry, aoi_id=None, force=False) :
     """
     This function downloads and crops an AEF GeoTIFF from S3 to the given AOI extent.
 
@@ -239,6 +292,9 @@ def download_aoi(uri, output_dir, geometry, aoi_id=None) :
     - geometry: shapely geometry in EPSG:4326, or a (lon, lat) tuple. The bounding box
                 of this geometry is used as the crop window.
     - aoi_id (str): Optional identifier prepended to the output filename.
+    - force (bool): If True, re-download even if the file is already on disk. The skip check
+                    only tests for existence, so a file left truncated by an interrupted write
+                    would otherwise be kept forever; pass force=True to overwrite it.
 
     Returns:
     - status (str): A message indicating the download status.
@@ -257,7 +313,7 @@ def download_aoi(uri, output_dir, geometry, aoi_id=None) :
     fname = basename(uri)
     if aoi_id is not None : fname = f"{aoi_id}_{fname}"
     local_path = join(output_dir, fname)
-    if exists(local_path) : return f"Skipped (exists): {fname}"
+    if exists(local_path) and not force : return f"Skipped (exists): {fname}"
 
     # Convert S3 URI to HTTPS URL for /vsicurl/
     # s3://us-west-2.opendata.source.coop/tge-labs/... -> https://data.source.coop/tge-labs/...
@@ -295,6 +351,13 @@ def download_aoi(uri, output_dir, geometry, aoi_id=None) :
 
         return f"Downloaded: {fname}"
 
+    except ValueError as e :
+        # rio_mask raises ValueError when the AOI misses the file entirely. That is an expected
+        # outcome (a tile is covered by several AEF files, and a small --window_km hits only one or
+        # two of them), not a failure -- report it as a skip so it is not counted as an error.
+        if 'do not overlap' in str(e).lower() : return f"Skipped (no overlap): {fname}"
+        return f"Error {uri}: {e}"
+
     except Exception as e :
         return f"Error {uri}: {e}"
 
@@ -303,7 +366,7 @@ def download_aoi(uri, output_dir, geometry, aoi_id=None) :
 # Code execution
 
 def download_aois_batch(aois_gdf, year_column, s3, output_dir, id_column=None,
-                        num_workers=8, buffer_m=5100) :
+                        num_workers=8, buffer_m=5100, force=False) :
     """
     This function downloads AOI-cropped AEF files for every row in a GeoDataFrame.
 
@@ -324,6 +387,7 @@ def download_aois_batch(aois_gdf, year_column, s3, output_dir, id_column=None,
     - id_column (str): Column name to use as AOI identifier in filenames (default: row index).
     - num_workers (int): Number of parallel download threads.
     - buffer_m (float): Buffer radius in metres around Point geometries (default 5100m).
+    - force (bool): If True, re-download files that are already on disk (default: False).
 
     Returns:
     - results (list): List of (aoi_id, status) tuples.
@@ -354,7 +418,7 @@ def download_aois_batch(aois_gdf, year_column, s3, output_dir, id_column=None,
 
     def _run(task) :
         uri, out_dir, geom, aoi_id = task
-        status = download_aoi(uri, out_dir, geom, aoi_id=aoi_id)
+        status = download_aoi(uri, out_dir, geom, aoi_id=aoi_id, force=force)
         print(f"  {status}")
         return (aoi_id, status)
 
@@ -369,13 +433,17 @@ def download_aois_batch(aois_gdf, year_column, s3, output_dir, id_column=None,
 
 
 def verify_downloads(aois_gdf, year_column, s3, output_dir, id_column=None,
-                     buffer_m=5100, redownload=False, num_workers=8) :
+                     buffer_m=5100, redownload=False, num_workers=8, force=False) :
     """
     This function verifies that all expected AEF files were downloaded for a set of AOIs.
 
     It rebuilds the expected task list using the same logic as download_aois_batch and checks
     whether each expected output file exists on disk. Useful to detect incomplete runs caused
     by crashes or network errors.
+
+    Note that the expected list is rebuilt with find_uris_for_aoi, so this function is only as
+    trustworthy as the resolver: it can only flag a file as missing if the resolver names it.
+    That is why find_uris_for_aoi defaults to strict=True.
 
     Args:
     - aois_gdf (GeoDataFrame): Same GeoDataFrame used during the original download.
@@ -386,6 +454,8 @@ def verify_downloads(aois_gdf, year_column, s3, output_dir, id_column=None,
     - buffer_m (float): Same buffer radius used during the original download (default 5100m).
     - redownload (bool): If True, re-download any missing files (default: False).
     - num_workers (int): Number of parallel download threads (only used if redownload=True).
+    - force (bool): If True, re-download every expected file rather than only the absent ones
+                    (default: False). Only meaningful together with redownload=True.
 
     Returns:
     - missing (list): List of local file paths that were expected but are absent.
@@ -417,36 +487,66 @@ def verify_downloads(aois_gdf, year_column, s3, output_dir, id_column=None,
     print(f"Verification complete: {total - len(missing_tasks)}/{total} files present, "
           f"{len(missing_tasks)} missing.")
 
-    if missing_tasks :
-        for p in missing_paths :
-            print(f"  Missing: {p}")
+    for p in missing_paths :
+        print(f"  Missing: {p}")
 
-        if redownload :
-            print(f"Re-downloading {len(missing_tasks)} missing file(s)...")
+    # With force, every expected file is fetched again, not just the absent ones
+    todo = tasks if force else missing_tasks
 
-            def _run(task) :
-                uri, out_dir, geom, aoi_id = task
-                status = download_aoi(uri, out_dir, geom, aoi_id=aoi_id)
-                print(f"  {status}")
-                return status
+    if todo and redownload :
+        print(f"{'Re-downloading all' if force else 'Re-downloading'} {len(todo)} file(s)...")
 
-            with ThreadPoolExecutor(max_workers=num_workers) as executor :
-                list(executor.map(_run, missing_tasks))
+        def _run(task) :
+            uri, out_dir, geom, aoi_id = task
+            status = download_aoi(uri, out_dir, geom, aoi_id=aoi_id, force=force)
+            print(f"  {status}")
+            return status
+
+        with ThreadPoolExecutor(max_workers=num_workers) as executor :
+            results = list(executor.map(_run, todo))
+
+        errors = [r for r in results if r.startswith('Error')]
+        print(f"Re-download completed: {len(results) - len(errors)} ok, {len(errors)} errors.")
+        for e in errors : print(f"  {e}")
 
     return missing_paths
 
 
+def str2bool(value) :
+    """
+    Convert a string to a boolean.
+    """
+    return str(value).lower() in ('true', 't', 'yes', '1')
+
+
+def parse_arguments() :
+    """
+    Parse the command-line arguments for downloading and verifying the AOI-cropped AEF files.
+    """
+    parser = argparse.ArgumentParser(description = 'Download AOI-cropped AEF files from S3.')
+    parser.add_argument('--aois', type = str, default = AOIS, help = 'Path to the AOIs vector file.')
+    parser.add_argument('--output_dir', type = str, default = OUTPUT_DIR, help = 'Root output directory; one sub-folder per AOI.')
+    parser.add_argument('--year_column', type = str, default = 'AVG_YEAR', help = 'Name of the column holding the AEF year of each AOI.')
+    parser.add_argument('--download', type = str2bool, default = False, help = 'Whether to run the initial download of all AOIs.')
+    parser.add_argument('--verify', type = str2bool, default = True, help = 'Whether to verify the downloads, and fetch whatever is missing.')
+    parser.add_argument('--force', type = str2bool, default = False, help = 'Whether to re-download files that are already on disk. Use this when the files on disk may be truncated, as the skip check only tests for existence.')
+    parser.add_argument('--num_workers', type = int, default = 8, help = 'Number of parallel download threads.')
+    parser.add_argument('--buffer_m', type = float, default = 5100, help = 'Half-width in metres of the box built around Point AOIs.')
+    args = parser.parse_args()
+    return args.aois, args.output_dir, args.year_column, args.download, args.verify, args.force, args.num_workers, args.buffer_m
+
+
 if __name__ == '__main__' :
 
-    DOWNLOAD = False
-    VERIFY = True
+    aois_path, output_dir, year_column, download, verify, force, num_workers, buffer_m = parse_arguments()
 
     s3 = boto3.client('s3', endpoint_url='https://data.source.coop', config=Config(signature_version=UNSIGNED))
-    aois = gpd.read_file('/scratch3/gsialelli/EcosystemAnalysis/Models/Biomes/AGBRef/AGBref.gpkg')
+    aois = gpd.read_file(aois_path)
 
-    if DOWNLOAD :
-        results = download_aois_batch(aois, year_column='AVG_YEAR', s3=s3, output_dir='/scratch3/gsialelli/AEF')
+    if download :
+        download_aois_batch(aois, year_column=year_column, s3=s3, output_dir=output_dir,
+                            num_workers=num_workers, buffer_m=buffer_m, force=force)
 
-    if VERIFY :
-        verify_downloads(aois, year_column='AVG_YEAR', s3=s3, output_dir='/scratch3/gsialelli/AEF', id_column=None,
-                         buffer_m=5100, redownload=True, num_workers=8)
+    if verify :
+        verify_downloads(aois, year_column=year_column, s3=s3, output_dir=output_dir, id_column=None,
+                         buffer_m=buffer_m, redownload=True, num_workers=num_workers, force=force)

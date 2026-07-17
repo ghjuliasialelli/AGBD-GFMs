@@ -32,6 +32,10 @@ for config in configs :
 
 
 working_ones = ['croma_optical', 'dofa', 'gfmswin', 'prithvi', 'remoteclip', 'satlasnet_si', 'scalemae', 'ssl4eo_moco']
-path_script = '/cluster/work/igp_psr/gsialelli/AGBD-GFM/pangaea/evalbig_runs'
+# Directory holding the generated .sh files (this script's own). Used only for the
+# printed `sbatch` hint; was previously a hardcoded path into the predecessor
+# AGBD-GFM repo. These launchers are run from the pangaea-bench fork.
+import os
+path_script = os.path.dirname(os.path.abspath(__file__))
 for encoder in working_ones:
     print(f"sbatch {path_script}/{encoder}.sh")

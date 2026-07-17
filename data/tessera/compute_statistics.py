@@ -24,7 +24,12 @@ continent_to_region = {'NorthAmerica': ['California', 'Cuba'], 'SouthAmerica': [
 
 ALL_REGIONS = [r for rs in continent_to_region.values() for r in rs]
 
-PATH_H5 = '/cluster/work/igp_psr/gsialelli/Data/patches/TESSERA' # '/scratch3/gsialelli/patches/TESSERA'
+# TESSERA patches directory, from config.sh at the repo root (see config.py). Picks the
+# cluster or local layout automatically; override with AGBD_PROFILE or AGBD_*_TESSERA_H5.
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+from config import get_paths as _get_paths, is_local as _is_local
+PATH_H5 = _get_paths(local = _is_local())['tessera_h5']
 NUM_DIMS = 128
 PATCH = 25
 

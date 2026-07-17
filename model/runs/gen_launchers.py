@@ -1,0 +1,1149 @@
+#!/usr/bin/env python3
+"""
+Generate the supervised training launchers (model/runs/nico/ and model/runs/lp-mlp/).
+
+One shared TEMPLATE + a per-experiment knob table (SPECS). Previously these 18 scripts
+were maintained by hand and had drifted into 9 near-identical skeletons; this collapses
+them into one. Run from the repo root or model/:
+
+    python3 model/runs/gen_launchers.py
+
+Every emitted script is config-driven (sources config.sh, no hardcoded paths).
+
+DEFAULTS are NEUTRAL -- they match train.py's argparse defaults (ensemble=false,
+n_members=1, biome=false, predict=agbd, tessera=false, aef_bands=all), so a knob that a
+given experiment does not set behaves exactly as if the flag were never passed. Each
+experiment states its own knobs in SPECS; only differences from DEFAULTS are listed.
+
+Derived values (in_features, emb_dim, num_outputs, film) are still computed in bash by the
+template, exactly as before -- they are NOT baked in, so editing a knob stays correct.
+
+Verified: the 18 emitted scripts produce byte-identical `train.py` arguments to the
+hand-written originals (shim-harness diff, 0 mismatches).
+
+NOTE: experiments/generalization/train_ablations/ is NOT generated here -- those 15 scripts
+already share a single (newer) skeleton with the geo-ablation + stats logic, so they have no
+drift to fix. model/runs/film/ was deleted (legacy, superseded by ensemble FiLM).
+"""
+
+import os
+
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Neutral knob defaults (== train.py argparse defaults where a flag may be absent).
+DEFAULTS = {
+    'aef': '"false"',
+    'aef_bands': '("all")',
+    'agb_res_all': '"false"',
+    'agb_res_one': '"mean"',
+    'agb_residuals': '"false" # (input)',
+    'agb_residuals_file': '"nico_film_17997535-1_17997535-2_17997535-3_train_agb_residuals_stats.pkl"',
+    'agb_residuals_film': '"false" # (FiLM)',
+    'alos': '"true"',
+    'arch': '"nico_film"',
+    'aspect': '"true"',
+    'bands': '(B01 B02 B03 B04 B05 B06 B07 B08 B8A B09 B11 B12) #(B02 B03 B04 B08) #(B01 B02 B03 B04 B05 B06 B07 B08 B8A B09 B11 B12)',
+    'batch_size': '64',
+    'biome': '"false"',
+    'biome_dim': '64',
+    'ch': '"false"',
+    'channel_dims': '(32 32 64 128 128 128)',
+    'chunk_size': '1',
+    'crop': '"false"',
+    'debug_film': '"false"',
+    'debug_latlon': '"true"',
+    'dem': '"true"',
+    'drop_overlaps': '"true" # drop AGBD test patches that overlap with the AEF train set',
+    'emb_cat2vec': '"false"',
+    'emb_dist': '"false"',
+    'emb_onehot': '"true" # if false, will default to cat2vec embeddings',
+    'emb_sincos': '"false"',
+    'ensemble': '"false"',
+    'ft_cat2vec': '"true"',
+    'ft_onehot': '"false"',
+    'ft_sincos': '"false"',
+    'gamma': '0.1',
+    'gedi_dates': '"false"',
+    'geo_ablation': '"false"',
+    'l2': '0.00001',
+    'latlon': '"true"',
+    'lc': '"true"',
+    'leaky_relu': '"false"',
+    'limit': '"false"',
+    'linear_emb': '"false"',
+    'lite': '"false"',
+    'lite_chunk_size': '1 # chunk size to use when lite is true',
+    'lite_eval_big': '"false" # whether to evaluate on the big AGBD dataset even when training on the lite version',
+    'log_transform': '"false"',
+    'long_skip': '"true"',
+    'loss_fn': "'MSE' # GNLL or MSE",
+    'lr': '0.001',
+    'max_pool': '"false"',
+    'min_delta': '0.0',
+    'n_epochs': '14',
+    'n_members': '1',
+    'new_stats': '"true"',
+    'norm_strat': "'pct'",
+    'num_sepconv_blocks': '8',
+    'num_sepconv_filters': '256',
+    'only_entry': '"true" # whether to only put FiLM layers in the entry block',
+    'oversampling': '"false"',
+    'padding_mode': "'zeros' # zeros, reflect, replicate, valid",
+    'patch_size': '(25 25) # (has to be 2k+1, 2k+1) and 2k+1 should be a multiple of 5',
+    'patience': '1000',
+    'predict': '"agbd"',
+    'region': '"false"',
+    'res_film': '"false"',
+    'res_in': '"false"',
+    'res_in_central': '"false"',
+    'res_in_patch': '"false"',
+    'res_norm': '"false"',
+    'residuals': '"false"',
+    'returns': '"dense" # dense or pixel',
+    'reweighting': "'no'",
+    'rh98_film': '"false"',
+    's1': '"false"',
+    's2_dates': '"true"',
+    's2_day': '"true"',
+    's2_doy': '"true"',
+    'scramble': '"false"',
+    'sigreg_lambda': '0.0',
+    'sim_dist': '"false"',
+    'similarity': '"JS" # can be one of \'SCC\', \'JS\'',
+    'similarity_weight': '10.0  #         -10,   10',
+    'slope': '"true"',
+    'step_size': '30',
+    'tessera': '"false"',
+    'test_mask': '"false"',
+    'tmpdir': '"true"',
+    'topo': '"true"',
+    'train_mask': '"false"',
+    'val_mask': '"false"',
+    'years': '(2019 2020)',
+}
+
+# Default #SBATCH header values.
+SBATCH_DEFAULTS = {
+    'sbatch_array': '1-1',
+    'sbatch_cpus_per_task': '8',
+    'sbatch_gpus': 'rtx_4090:1',
+    'sbatch_job_name': 'models',
+    'sbatch_mem_per_cpu': '8G',
+    'sbatch_nodes': '1',
+    'sbatch_time': '120:00:00',
+}
+
+# Per-experiment overrides. Only what differs from DEFAULTS.
+SPECS = {
+    'model/runs/lp-mlp/lp_aef.sh': {
+        'knobs': {
+            'aef': '"true"',
+            'alos': '"false"',
+            'arch': '"lp"',
+            'aspect': '"false"',
+            'bands': '() #(B02 B03 B04 B08) #(B01 B02 B03 B04 B05 B06 B07 B08 B8A B09 B11 B12)',
+            'batch_size': '2048',
+            'dem': '"false"',
+            'ft_cat2vec': '"false"',
+            'latlon': '"false"',
+            'lc': '"false"',
+            'lite_chunk_size': '32 # chunk size to use when lite is true',
+            'n_epochs': '50',
+            'n_members': '3',
+            'patch_size': '(1 1) # (has to be 2k+1, 2k+1) and 2k+1 should be a multiple of 5',
+            'predict': '"agbd" # agbd or rh98 or biome',
+            's2_dates': '"false"',
+            's2_day': '"false"',
+            's2_doy': '"false"',
+            'slope': '"false"',
+            'topo': '"false"',
+        },
+        'sbatch': {
+            'sbatch_array': '1-3',
+            'sbatch_gpus': 'rtx_2080_ti:1',
+            'sbatch_mem_per_cpu': '4G',
+        },
+    },
+    'model/runs/lp-mlp/lp_aef_lite.sh': {
+        'knobs': {
+            'aef': '"true"',
+            'alos': '"false"',
+            'arch': '"lp"',
+            'aspect': '"false"',
+            'bands': '() #(B02 B03 B04 B08) #(B01 B02 B03 B04 B05 B06 B07 B08 B8A B09 B11 B12)',
+            'batch_size': '2048',
+            'dem': '"false"',
+            'drop_overlaps': '"false" # drop AGBD test patches that overlap with the AEF train set',
+            'ft_cat2vec': '"false"',
+            'latlon': '"false"',
+            'lc': '"false"',
+            'lite': '"true"',
+            'n_epochs': '50',
+            'n_members': '3',
+            'patch_size': '(1 1) # (has to be 2k+1, 2k+1) and 2k+1 should be a multiple of 5',
+            'predict': '"agbd" # agbd or rh98 or biome',
+            's2_dates': '"false"',
+            's2_day': '"false"',
+            's2_doy': '"false"',
+            'slope': '"false"',
+            'topo': '"false"',
+        },
+        'sbatch': {
+            'sbatch_array': '1-3',
+            'sbatch_gpus': 'rtx_2080_ti:1',
+            'sbatch_mem_per_cpu': '4G',
+        },
+    },
+    'model/runs/lp-mlp/lp_tessera_lite.sh': {
+        'knobs': {
+            'alos': '"false"',
+            'arch': '"lp"',
+            'aspect': '"false"',
+            'bands': '() #(B02 B03 B04 B08) #(B01 B02 B03 B04 B05 B06 B07 B08 B8A B09 B11 B12)',
+            'batch_size': '2048',
+            'dem': '"false"',
+            'drop_overlaps': '"false" # drop AGBD test patches that overlap with the AEF train set',
+            'ft_cat2vec': '"false"',
+            'latlon': '"false"',
+            'lc': '"false"',
+            'lite': '"true"',
+            'n_epochs': '50',
+            'n_members': '3',
+            'patch_size': '(1 1) # (has to be 2k+1, 2k+1) and 2k+1 should be a multiple of 5',
+            'predict': '"agbd" # agbd or rh98 or biome',
+            's2_dates': '"false"',
+            's2_day': '"false"',
+            's2_doy': '"false"',
+            'slope': '"false"',
+            'tessera': '"true"',
+            'topo': '"false"',
+        },
+        'sbatch': {
+            'sbatch_array': '1-3',
+            'sbatch_gpus': 'rtx_2080_ti:1',
+            'sbatch_mem_per_cpu': '4G',
+        },
+    },
+    'model/runs/lp-mlp/mlp_aef.sh': {
+        'knobs': {
+            'aef': '"true"',
+            'alos': '"false"',
+            'arch': '"mlp"',
+            'aspect': '"false"',
+            'bands': '()',
+            'dem': '"false"',
+            'emb_onehot': '"false" # if false, will default to cat2vec embeddings',
+            'latlon': '"false"',
+            'lc': '"false"',
+            'loss_fn': "'MSE'",
+            'n_epochs': '50',
+            'patch_size': '(1 1) # (has to be 2k+1, 2k+1) and 2k+1 should be a multiple of 5',
+            's2_dates': '"false"',
+            's2_day': '"false"',
+            's2_doy': '"false"',
+            'sigreg_lambda': '0.05',
+            'slope': '"false"',
+            'topo': '"false"',
+        },
+        'sbatch': {
+            'sbatch_array': '1-3',
+        },
+    },
+    'model/runs/lp-mlp/mlp_aef_lite.sh': {
+        'knobs': {
+            'aef': '"true"',
+            'alos': '"false"',
+            'arch': '"mlp"',
+            'aspect': '"false"',
+            'bands': '()',
+            'dem': '"false"',
+            'drop_overlaps': '"false" # drop AGBD test patches that overlap with the AEF train set',
+            'emb_onehot': '"false" # if false, will default to cat2vec embeddings',
+            'latlon': '"false"',
+            'lc': '"false"',
+            'lite': '"true"',
+            'loss_fn': "'MSE'",
+            'n_epochs': '50',
+            'patch_size': '(1 1) # (has to be 2k+1, 2k+1) and 2k+1 should be a multiple of 5',
+            's2_dates': '"false"',
+            's2_day': '"false"',
+            's2_doy': '"false"',
+            'sigreg_lambda': '0.05',
+            'slope': '"false"',
+            'topo': '"false"',
+        },
+        'sbatch': {
+            'sbatch_array': '1-3',
+            'sbatch_mem_per_cpu': '4G',
+        },
+    },
+    'model/runs/lp-mlp/mlp_tessera_lite.sh': {
+        'knobs': {
+            'alos': '"false"',
+            'arch': '"mlp"',
+            'aspect': '"false"',
+            'bands': '()',
+            'dem': '"false"',
+            'drop_overlaps': '"false" # drop AGBD test patches that overlap with the AEF train set',
+            'emb_onehot': '"false" # if false, will default to cat2vec embeddings',
+            'latlon': '"false"',
+            'lc': '"false"',
+            'lite': '"true"',
+            'loss_fn': "'MSE'",
+            'n_epochs': '50',
+            'patch_size': '(1 1) # (has to be 2k+1, 2k+1) and 2k+1 should be a multiple of 5',
+            's2_dates': '"false"',
+            's2_day': '"false"',
+            's2_doy': '"false"',
+            'sigreg_lambda': '0.05',
+            'slope': '"false"',
+            'tessera': '"true"',
+            'topo': '"false"',
+        },
+        'sbatch': {
+            'sbatch_array': '1-3',
+            'sbatch_mem_per_cpu': '4G',
+        },
+    },
+    'model/runs/nico/aef.sh': {
+        'knobs': {
+            'aef': '"true"',
+            'alos': '"false"',
+            'aspect': '"false"',
+            'bands': '() #(B02 B03 B04 B08) #(B01 B02 B03 B04 B05 B06 B07 B08 B8A B09 B11 B12)',
+            'dem': '"false"',
+            'ensemble': '"true"',
+            'ft_cat2vec': '"false"',
+            'latlon': '"false"',
+            'lc': '"false"',
+            'n_members': '3',
+            'predict': '"agbd" # agbd or rh98 or biome',
+            's2_dates': '"false"',
+            's2_day': '"false"',
+            's2_doy': '"false"',
+            'slope': '"false"',
+            'topo': '"false"',
+        },
+        'sbatch': {},
+    },
+    'model/runs/nico/aef_agbd*.sh': {
+        'knobs': {
+            'aef': '"true"',
+            'alos': '"false"',
+            'bands': '() #(B02 B03 B04 B08) #(B01 B02 B03 B04 B05 B06 B07 B08 B8A B09 B11 B12)',
+            'dem': '"false"',
+            'ensemble': '"true"',
+            'n_members': '3',
+            'predict': '"agbd" # agbd or rh98 or biome',
+            's2_dates': '"false"',
+            's2_day': '"false"',
+            's2_doy': '"false"',
+        },
+        'sbatch': {},
+    },
+    'model/runs/nico/aef_agbd*_lite.sh': {
+        'knobs': {
+            'aef': '"true"',
+            'alos': '"false"',
+            'bands': '() #(B02 B03 B04 B08) #(B01 B02 B03 B04 B05 B06 B07 B08 B8A B09 B11 B12)',
+            'dem': '"false"',
+            'drop_overlaps': '"false" # drop AGBD test patches that overlap with the AEF train set',
+            'ensemble': '"true"',
+            'lite': '"true"',
+            'n_members': '3',
+            'predict': '"agbd" # agbd or rh98 or biome',
+            's2_dates': '"false"',
+            's2_day': '"false"',
+            's2_doy': '"false"',
+        },
+        'sbatch': {},
+    },
+    'model/runs/nico/aef_agbd*_nolatlon.sh': {
+        'knobs': {
+            'aef': '"true"',
+            'alos': '"false"',
+            'bands': '() #(B02 B03 B04 B08) #(B01 B02 B03 B04 B05 B06 B07 B08 B8A B09 B11 B12)',
+            'dem': '"false"',
+            'ensemble': '"true"',
+            'latlon': '"false"',
+            'n_members': '3',
+            'predict': '"agbd" # agbd or rh98 or biome',
+            's2_dates': '"false"',
+            's2_day': '"false"',
+            's2_doy': '"false"',
+        },
+        'sbatch': {},
+    },
+    'model/runs/nico/aef_lite.sh': {
+        'knobs': {
+            'aef': '"true"',
+            'alos': '"false"',
+            'aspect': '"false"',
+            'bands': '() #(B02 B03 B04 B08) #(B01 B02 B03 B04 B05 B06 B07 B08 B8A B09 B11 B12)',
+            'dem': '"false"',
+            'drop_overlaps': '"false" # drop AGBD test patches that overlap with the AEF train set',
+            'ensemble': '"true"',
+            'ft_cat2vec': '"false"',
+            'latlon': '"false"',
+            'lc': '"false"',
+            'lite': '"true"',
+            'n_members': '3',
+            'predict': '"agbd" # agbd or rh98 or biome',
+            's2_dates': '"false"',
+            's2_day': '"false"',
+            's2_doy': '"false"',
+            'slope': '"false"',
+            'topo': '"false"',
+        },
+        'sbatch': {},
+    },
+    'model/runs/nico/aef_subset.sh': {
+        'knobs': {
+            'aef': '"true"',
+            'aef_bands': '(6 24 28 32 39 47) # or "all"',
+            'alos': '"false"',
+            'aspect': '"false"',
+            'bands': '() #(B02 B03 B04 B08) #(B01 B02 B03 B04 B05 B06 B07 B08 B8A B09 B11 B12)',
+            'dem': '"false"',
+            'ensemble': '"true"',
+            'ft_cat2vec': '"false"',
+            'latlon': '"false"',
+            'lc': '"false"',
+            'n_members': '3',
+            'predict': '"agbd" # agbd or rh98 or biome',
+            's2_dates': '"false"',
+            's2_day': '"false"',
+            's2_doy': '"false"',
+            'slope': '"false"',
+            'topo': '"false"',
+        },
+        'sbatch': {},
+    },
+    'model/runs/nico/agbd.sh': {
+        'knobs': {
+            'ensemble': '"true"',
+            'n_members': '3',
+            'predict': '"agbd" # agbd or rh98 or biome',
+        },
+        'sbatch': {},
+    },
+    'model/runs/nico/agbd_lite.sh': {
+        'knobs': {
+            'drop_overlaps': '"false" # drop AGBD test patches that overlap with the AEF train set',
+            'ensemble': '"true"',
+            'lite': '"true"',
+            'n_members': '3',
+            'predict': '"agbd" # agbd or rh98 or biome',
+        },
+        'sbatch': {},
+    },
+    'model/runs/nico/agbd_lite_s2_nolatlon.sh': {
+        'knobs': {
+            'alos': '"false"',
+            'aspect': '"false"',
+            'dem': '"false"',
+            'drop_overlaps': '"false" # drop AGBD test patches that overlap with the AEF train set',
+            'ensemble': '"true"',
+            'latlon': '"false"',
+            'lc': '"false"',
+            'lite': '"true"',
+            'n_members': '3',
+            'predict': '"agbd" # agbd or rh98 or biome',
+            's2_dates': '"false"',
+            's2_day': '"false"',
+            's2_doy': '"false"',
+            'slope': '"false"',
+            'topo': '"false"',
+        },
+        'sbatch': {},
+    },
+    'model/runs/nico/agbd_nolatlon.sh': {
+        'knobs': {
+            'ensemble': '"true"',
+            'latlon': '"false"',
+            'n_members': '3',
+            'predict': '"agbd" # agbd or rh98 or biome',
+        },
+        'sbatch': {},
+    },
+    'model/runs/nico/agbd_s2_nolatlon.sh': {
+        'knobs': {
+            'alos': '"false"',
+            'aspect': '"false"',
+            'dem': '"false"',
+            'ensemble': '"true"',
+            'latlon': '"false"',
+            'lc': '"false"',
+            'n_members': '3',
+            'predict': '"agbd" # agbd or rh98 or biome',
+            's2_dates': '"false"',
+            's2_day': '"false"',
+            's2_doy': '"false"',
+            'slope': '"false"',
+            'topo': '"false"',
+        },
+        'sbatch': {},
+    },
+    'model/runs/nico/tessera_lite.sh': {
+        'knobs': {
+            'alos': '"false"',
+            'aspect': '"false"',
+            'bands': '() #(B02 B03 B04 B08) #(B01 B02 B03 B04 B05 B06 B07 B08 B8A B09 B11 B12)',
+            'dem': '"false"',
+            'drop_overlaps': '"false" # drop AGBD test patches that overlap with the AEF train set',
+            'ensemble': '"true"',
+            'ft_cat2vec': '"false"',
+            'latlon': '"false"',
+            'lc': '"false"',
+            'lite': '"true"',
+            'n_members': '3',
+            'predict': '"agbd" # agbd or rh98 or biome',
+            's2_dates': '"false"',
+            's2_day': '"false"',
+            's2_doy': '"false"',
+            'slope': '"false"',
+            'tessera': '"true"',
+            'topo': '"false"',
+        },
+        'sbatch': {},
+    },
+}
+
+TEMPLATE = r'''#!/bin/bash
+#SBATCH --nodes={sbatch_nodes}
+#SBATCH --cpus-per-task={sbatch_cpus_per_task}
+#SBATCH --time={sbatch_time}
+#SBATCH --output=/cluster/scratch/gsialelli/logs/training-%A.txt
+#SBATCH --error=/cluster/scratch/gsialelli/logs/training-%A.txt
+#SBATCH --mem-per-cpu={sbatch_mem_per_cpu}
+#SBATCH --job-name={sbatch_job_name}
+#SBATCH --array={sbatch_array}
+#SBATCH --gpus={sbatch_gpus}
+
+# --- AGBD-GFMs config ----------------------------------------------------------
+# Locate config.sh at the repo root (walk up from the working directory) and
+# source it: provides $AGBD_ENV and every AGBD_* path used below. Launchers are
+# meant to be run from inside the repo (the model/ directory for train & eval).
+_agbd_dir="$(pwd)"
+while [ "$_agbd_dir" != "/" ] && [ ! -f "$_agbd_dir/config.sh" ]; do _agbd_dir="$(dirname "$_agbd_dir")"; done
+if [ ! -f "$_agbd_dir/config.sh" ]; then echo "config.sh not found; run from inside the AGBD-GFMs repo" >&2; exit 1; fi
+source "$_agbd_dir/config.sh"
+
+################################################################################################################################
+
+# Whether to use the normal AGBD dataset, or the AGBD-Lite dataset
+lite={lite}
+lite_eval_big={lite_eval_big}
+lite_chunk_size={lite_chunk_size}
+
+# Whether to use AEF embeddings
+aef={aef}
+
+# Whether to use TESSERA embeddings (Lite only)
+tessera={tessera}
+
+# Subset of AEF embedding bands ("all" = the full 64). Drives --in_features only.
+aef_bands={aef_bands}
+drop_overlaps={drop_overlaps}
+
+# Whether to move everything to $TMPDIR, or read everything from $SCRATCH
+tmpdir={tmpdir}
+
+################################################################################################################################
+# Establish the paths based on whether we're on the cluster or not
+
+current_directory=$(pwd)
+echo "Current Directory: $current_directory"
+first_part=$(echo "$current_directory" | cut -d'/' -f2)
+
+if [ "$AGBD_ENV" == "cluster" ]
+then
+
+    module load stack/2024-06 gcc/12.2.0
+    module load stack/2024-06 python_cuda/3.11.6
+    source ${{AGBD_CLUSTER_VENV}}
+
+    JOB_ID=$SLURM_ARRAY_JOB_ID
+    MODEL_IDX=${{SLURM_ARRAY_TASK_ID:-0}}
+    NCPUS=$SLURM_CPUS_PER_TASK
+    NNODES=$SLURM_NNODES
+    NGPUS=$SLURM_GPUS
+
+    if [[ $NGPUS == *":"* ]]; then
+        NGPUS=${{SLURM_GPUS##*:}}
+    fi
+    
+else
+    JOB_ID=0
+    MODEL_IDX=0
+    NGPUS=1
+    NCPUS=8
+    NNODES=1
+fi
+
+if [ "$AGBD_ENV" == "cluster" ]; then
+    echo "Running on a cluster"
+    
+    if [ "$tmpdir" == "true" ]; then
+        echo "Using TMPDIR for dataset"
+    
+        # Move the .h5 files, and the statistics
+        if [ "$lite" == "true" ]; then
+            rclone copy ${{AGBD_CLUSTER_H5}}/AGBD-Lite/ ${{TMPDIR}} --exclude "AGBD-test.h5" --include "*.h5" --include "AGBD-Lite-statistics.pkl" --transfers 16 --checkers 32
+            cp ${{AGBD_CLUSTER_EMBEDDINGS}}/AGBD-Lite/embeddings_train_lite.csv ${{TMPDIR}}
+            cp ${{AGBD_CLUSTER_AUX}}/agbd-lite/mapping_lite_to_og.pkl ${{TMPDIR}}
+            if [ "$lite_eval_big" == "true" ]; then
+                rclone copy ${{AGBD_CLUSTER_H5}}/AGBD-Lite/AGBD-test.h5 ${{TMPDIR}} --transfers 16 --checkers 32
+            fi
+        fi
+        if [ "$lite" == "false" ]; then
+            rclone copy ${{AGBD_CLUSTER_H5}}/ ${{TMPDIR}} --include "*v4_*-20.h5" --include "statistics_subset_2019-2020-v4*.pkl" --include "AGBD_statistics_2019-2020_global.pkl" --transfers 16 --checkers 32
+        fi
+        if [ "$aef" == "true" ]; then
+            rclone copy ${{AGBD_CLUSTER_AEF_H5}}/ ${{TMPDIR}} --include "*.h5" --include "*statistics*.pkl" --transfers 16 --checkers 32
+        fi
+        if [ "$tessera" == "true" ]; then
+            rclone copy ${{AGBD_CLUSTER_TESSERA_H5}}/ ${{TMPDIR}} --include "TESSERA-Lite-*.h5" --include "*statistics*.pkl" --transfers 16 --checkers 32
+        fi
+
+        # Other files
+        cp ${{AGBD_CLUSTER_AGB}}/biomes_splits_to_name.pkl ${{TMPDIR}}
+        cp ${{AGBD_CLUSTER_EMBEDDINGS}}/AGBD/embeddings_train.csv ${{TMPDIR}}
+        cp ${{AGBD_CLUSTER_HELPER}}/tiles_per_region.pkl ${{TMPDIR}}
+        cp ${{AGBD_CLUSTER_AUX}}/aef-dwn/AEF_overlaps.pkl ${{TMPDIR}}
+
+    else
+        echo "Using SCRATCH for dataset"
+    fi
+
+elif [ "$AGBD_ENV" != "cluster" ]; then
+    echo "Running on a local machine"
+else
+    echo "Environment unknown"
+fi
+
+
+##################################################################################################################
+# To edit ########################################################################################################
+
+# Loss function
+loss_fn={loss_fn}
+
+# Target variable
+predict={predict}
+if [ "$predict" == "agbd" ] || [ "$predict" == "rh98" ]
+then
+    num_outputs=1
+elif [ "$predict" == "biome" ]
+then
+    num_outputs=14
+else
+    echo "Invalid target specified. Please choose one of 'agbd', 'rh98', or 'biome'."
+    exit 1
+fi
+
+# Architecture
+arch={arch}
+if [[ $arch == *"film"* ]]; then
+    film="true"
+else
+    film="false"
+fi
+
+# Check that if loss is GNLL, then _gaussian needs to be in arch
+if [ "$loss_fn" == "GNLL" ] && [[ "$arch" != *"gaussian"* ]]; then
+    echo "If loss function is GNLL, then architecture must be gaussian." 
+    exit 1
+fi
+
+# Nico_net architecture
+num_sepconv_blocks={num_sepconv_blocks}
+num_sepconv_filters={num_sepconv_filters}
+long_skip={long_skip}
+returns={returns}
+
+only_entry={only_entry}
+l2={l2}
+
+# Features to include ################################################################################################
+
+# patch size
+patch_size={patch_size}
+crop={crop}
+
+# padding strategy
+padding_mode={padding_mode}
+
+# normalization values
+new_stats={new_stats}
+norm_strat={norm_strat}
+
+# whether to log transform the AGB
+log_transform={log_transform}
+
+# whether to over-sample from the minority AGB bins
+oversampling={oversampling}
+
+# canopy height
+ch={ch}
+
+# canopy height - gedi residuals
+residuals={residuals}
+res_norm={res_norm}
+res_film={res_film}
+res_in={res_in}
+res_in_central={res_in_central}
+res_in_patch={res_in_patch}
+
+# rh98 for film layers
+rh98_film={rh98_film}
+
+# agb residuals 
+agb_residuals={agb_residuals}
+agb_residuals_film={agb_residuals_film}
+agb_residuals_file={agb_residuals_file}
+agb_res_all={agb_res_all}
+agb_res_one={agb_res_one}
+
+# conditioning the output on the CH
+sim_dist={sim_dist}
+similarity={similarity}
+similarity_weight={similarity_weight}
+SCC_ws=5
+SCC_softmax="false"
+
+# s2 bands
+bands={bands}
+s2_dates={s2_dates}
+s2_day={s2_day}
+s2_doy={s2_doy}
+
+# whether to randomly drop the s2 data
+train_mask={train_mask}
+val_mask={val_mask}
+test_mask={test_mask}
+
+# latitude and longitude
+latlon={latlon}
+debug_latlon={debug_latlon}
+
+# s1 bands
+s1={s1}
+
+# alos bands
+alos={alos}
+
+# land cover & how to encode it for the input feature
+lc={lc}
+ft_cat2vec={ft_cat2vec}
+ft_onehot={ft_onehot}
+ft_sincos={ft_sincos}
+
+# dem
+dem={dem}
+topo={topo}
+aspect={aspect}
+slope={slope}
+
+# If 1x1 patch, cannot have topo
+if [ "${{patch_size[0]}}" -eq 1 ] && [ "${{patch_size[1]}}" -eq 1 ]; then
+    topo="false"
+    aspect="false"
+    slope="false"
+fi
+
+# gedi dates
+gedi_dates={gedi_dates}
+
+# Biome/region FiLM layers
+# input for the FiLM layers & how to encode it
+region={region}
+biome={biome}
+emb_onehot={emb_onehot}
+emb_dist={emb_dist}
+emb_cat2vec={emb_cat2vec}
+emb_sincos={emb_sincos}
+biome_dim={biome_dim}
+linear_emb={linear_emb}
+# Ensemble FiLM
+ensemble={ensemble}
+n_members={n_members}
+
+
+# Year to train on
+years={years}
+
+echo "Year: ${{years[@]}}"
+echo "Architecture: $arch"
+
+# If we predict the biome, we cannot use it for FiLM
+if [ "$predict" == "biome" ] && [ "$film" == "true" ]
+then
+    biome="false"
+fi
+
+# Which region to hold out for testing
+geo_ablation={geo_ablation}
+if [ "$geo_ablation" == "true" ]
+then
+    regions=("Europe" "South Asia" "Australasia" "Africa" "North America" "South America")
+    if [ "$AGBD_ENV" == "cluster" ]
+    then
+        region_id=$SLURM_ARRAY_TASK_ID
+    else
+        region_id=1
+    fi
+    hold_out_region=${{regions[$((region_id-1))]}} # because array starts at 1
+    echo "Holding out region: $hold_out_region"
+else
+    hold_out_region="None"
+fi
+
+
+# Features counts and args checks ################################################################################################
+
+# Define the dimension of the "biome" embeddings for the FiLM layers
+if [ "$biome" == "true" ]; then
+    if [ "$emb_onehot" == "true" ] || [ "$emb_dist" == "true" ] ; then
+        emb_dim=14 # 14dim embeddings
+    elif [ "$emb_cat2vec" == "true" ]; then
+        emb_dim=5 # 5dim embeddings
+    elif [ "$emb_sincos" == "true" ]; then
+        emb_dim=2 # sine and cosine
+    else 
+        echo "No embedding type selected."
+        exit 1
+    fi
+else 
+    emb_dim=0
+fi
+
+# Define the dimension of the "region" embeddings for the FiLM layers
+if [ "$region" == "true" ]; then
+    emb_dim=$((emb_dim+8)) # always onehot region
+fi
+
+# Define the dimension of the "residuals" embeddings for the FiLM layers
+if [ "$res_film" == "true" ]; then
+    emb_dim=$((emb_dim+1)) # 1dim residuals
+fi
+
+# If we give the RH98 to the FiLM layers, we need to add 1 dimension
+if [ "$rh98_film" == "true" ]; then
+    emb_dim=$((emb_dim+1)) # 1dim residuals
+fi
+
+# If we give the AGB residuals to the FiLM layers, we need to add 1 dimensions
+if [ "$agb_residuals_film" == "true" ]
+then
+    if [ "$agb_res_all" == "true" ]
+    then
+        emb_dim=$((emb_dim+5)) # + 5 because ['min', 'max', 'mean', 'median', 'std']
+    else
+        emb_dim=$((emb_dim+1)) # + 1 because only one feature
+    fi
+fi
+
+if [ "$ensemble" == "true" ]
+then
+    emb_dim=$n_members # n_members dimensions for the ensemble one-hot encoding
+fi
+
+# Check that if aspect or slope are true, then topo must be true
+if [ "$aspect" == "true" ] || [ "$slope" == "true" ] && [ "$topo" == "false" ]; then
+    echo "If aspect or slope are true, then topo must be true."
+    exit 1
+fi
+
+# Check that if s2_day or s2_doy are true, then s2_dates must be true
+if [ "$s2_day" == "true" ] || [ "$s2_doy" == "true" ] && [ "$s2_dates" == "false" ]; then
+    echo "If s2_day or s2_doy are true, then s2_dates must be true."
+    exit 1
+fi
+
+# if residuals is true, then either res_film or res_in needs to be true. and if res_in is true, res_in_central or res_in_patch needs to be true
+if [ "$residuals" == "true" ] && [ "$res_film" == "false" ] && [ "$res_in" == "false" ]; then
+    echo "If --residuals is true, then either --res_film or --res_in needs to be true."
+    exit 1
+fi
+if [ "$res_in" == "true" ] && [ "$res_in_central" == "false" ] && [ "$res_in_patch" == "false" ]; then
+    echo "If --res_in is true, then either --res_in_central or --res_in_patch needs to be true."
+    exit 1
+fi
+# and if either res_in or res_film is true, then residuals needs to be true, otherwise exit 1
+if [ "$res_in" == "true" ] || [ "$res_film" == "true" ]; then
+    if [ "$residuals" == "false" ]; then
+        echo "If --res_in or --res_film is true, then --residuals needs to be true."
+        exit 1
+    fi
+fi
+
+# Model parameters ###############################################################################################
+
+channel_dims={channel_dims}
+leaky_relu={leaky_relu}
+max_pool={max_pool}
+
+# Training arguments
+n_epochs={n_epochs}
+batch_size={batch_size}
+limit={limit}
+reweighting={reweighting}
+lr={lr}
+step_size={step_size}
+gamma={gamma}
+patience={patience}
+min_delta={min_delta}
+chunk_size={chunk_size}
+sigreg_lambda={sigreg_lambda}
+
+# Sanity check
+scramble={scramble}
+debug_film={debug_film}
+
+# Compute the number of input features #############################################################################
+
+# s2 bands and lat/lon bands
+num_bands=${{#bands[@]}}
+in_features=$((num_bands))
+if [ "$latlon" == "true" ]
+then 
+    in_features=$((in_features+4)) # + 4 because lat_cos, lat_sin, lon_cos, lon_sin
+fi
+
+# canopy height
+if [ "$ch" == "true" ]
+then 
+    in_features=$((in_features+2)) # + 2 because `ch` and `ch_std`
+fi
+
+# alos bands
+if [ "$alos" == "true" ]
+then 
+    in_features=$((in_features+2)) # + 2 because hh and hv
+fi
+
+# land cover
+if [ "$lc" == "true" ]
+then
+    if [ "$ft_cat2vec" == "true" ]
+    then
+        in_features=$((in_features+6)) # + 6 because 5dim embeddings and lc prob
+    elif [ "$ft_onehot" == "true" ]
+    then
+        in_features=$((in_features+15)) # + 14 because 14dim embeddings and lc prob
+    elif [ "$ft_sincos" == "true" ]
+    then
+        in_features=$((in_features+3)) # + 3 because lc sin lc cos and lc prob
+    fi
+fi
+
+# digital elevation model
+if [ "$topo" == "true" ]
+then
+    if [ "$aspect" == "true" ]
+    then
+        in_features=$((in_features+2)) # + 2 because aspect_cos, aspect_si
+    fi
+    if [ "$slope" == "true" ]
+    then
+        in_features=$((in_features+1)) # + 1 because slope
+    fi
+    if [ "$dem" == "true" ]
+    then
+        in_features=$((in_features+1)) # + 1 because dem
+    fi
+fi
+
+# gedi dates
+if [ "$gedi_dates" == "true" ]
+then
+    in_features=$((in_features+3)) # + 3 because num_days, cos, sin
+fi
+
+# s2 dates
+if [ "$s2_dates" == "true" ]
+then
+    if [ "$s2_day" == "true" ]
+    then
+        in_features=$((in_features+1)) # + 1 because num_days
+    fi
+    if [ "$s2_doy" == "true" ]
+    then
+        in_features=$((in_features+2)) # + 1 because cos, sin
+    fi
+fi
+
+# residuals
+if [ "$res_in" == "true" ]
+then
+    in_features=$((in_features+1)) # + 1 because residuals
+fi
+
+# agb residuals
+if [ "$agb_residuals" == "true" ]
+then
+    if [ "$agb_res_all" == "true" ]
+    then
+        in_features=$((in_features+5)) # + 5 because ['min', 'max', 'mean', 'median', 'std']
+    else
+        in_features=$((in_features+1)) # + 1 because only one feature
+    fi
+fi
+
+# aef embeddings
+if [ "$aef" == "true" ]
+then
+    if [ "${{aef_bands[0]}}" == "all" ]
+    then
+        num_aef_bands=64
+    else
+        num_aef_bands=${{#aef_bands[@]}}
+    fi
+    in_features=$((in_features+num_aef_bands)) # AEF embedding dims
+fi
+
+# tessera embeddings
+if [ "$tessera" == "true" ]
+then
+    in_features=$((in_features+128)) # + 128 because 128dim TESSERA embeddings
+fi
+
+# Output path and model name #####################################################################################
+
+if [ "$AGBD_ENV" == "cluster" ]
+then
+    model_path=${{AGBD_CLUSTER_CKPT}}/weights/${arch}
+    if [ "$tmpdir" == "true" ]; then
+        dataset_path=$TMPDIR
+    else
+        dataset_path=$SCRATCH
+    fi
+    model_name=${{model_path}}/${{JOB_ID}}-${{MODEL_IDX}}
+else
+    model_path=${{AGBD_LOCAL_CKPT}}/${arch}
+    dataset_path='local'
+    model_name=${{model_path}}/local
+fi
+
+# Launch training ################################################################################################
+echo "NNODES: $NNODES"
+echo "NGPUS: $NGPUS"
+
+torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=$NNODES --nproc_per_node=$NGPUS \
+        train.py    --model_path $model_path \
+                    --model_name $model_name \
+                    --dataset_path $dataset_path \
+                    --stats_hold_out_region "None" \
+                    --stats_keep_region "false" \
+                    --augment "false" \
+                    --norm "false" \
+                    --arch $arch \
+                    --model_idx $MODEL_IDX \
+                    --loss_fn $loss_fn \
+                    --latlon $latlon \
+                    --debug_latlon $debug_latlon \
+                    --ch $ch \
+                    --bands $(IFS=" " ; echo "${{bands[*]}}") \
+                    --in_features $in_features \
+                    --s1 $s1 \
+                    --alos $alos \
+                    --lc $lc \
+                    --dem $dem \
+                    --topo $topo \
+                    --aspect $aspect \
+                    --slope $slope \
+                    --gedi_dates $gedi_dates \
+                    --s2_dates $s2_dates \
+                    --s2_day $s2_day \
+                    --s2_doy $s2_doy \
+                    --num_outputs $num_outputs \
+                    --downsample "false" \
+                    --n_epochs $n_epochs \
+                    --batch_size $batch_size \
+                    --lr $lr \
+                    --step_size $step_size \
+                    --gamma $gamma \
+                    --patience $patience \
+                    --min_delta $min_delta \
+                    --reweighting $reweighting \
+                    --norm_strat $norm_strat \
+                    --limit $limit \
+                    --patch_size ${{patch_size[@]}} \
+                    --chunk_size $chunk_size \
+                    --years ${{years[@]}} \
+                    --num_gpus $NGPUS \
+                    --num_cpus $NCPUS \
+                    --film $film \
+                    --biome_dim $biome_dim \
+                    --emb_dim $emb_dim \
+                    --region $region \
+                    --biome $biome \
+                    --num_sepconv_blocks $num_sepconv_blocks \
+                    --num_sepconv_filters $num_sepconv_filters \
+                    --long_skip $long_skip \
+                    --new_stats $new_stats \
+                    --only_entry $only_entry \
+                    --l2 $l2 \
+                    --residuals $residuals \
+                    --res_film $res_film \
+                    --res_in $res_in \
+                    --res_in_central $res_in_central \
+                    --res_in_patch $res_in_patch \
+                    --emb_onehot $emb_onehot \
+                    --emb_dist $emb_dist \
+                    --emb_cat2vec $emb_cat2vec \
+                    --emb_sincos $emb_sincos \
+                    --ft_cat2vec $ft_cat2vec \
+                    --ft_onehot $ft_onehot \
+                    --ft_sincos $ft_sincos \
+                    --res_norm $res_norm \
+                    --linear_emb $linear_emb \
+                    --rh98_film $rh98_film \
+                    --crop $crop \
+                    --padding_mode $padding_mode \
+                    --returns $returns \
+                    --agb_residuals $agb_residuals \
+                    --agb_residuals_file $agb_residuals_file \
+                    --agb_res_all $agb_res_all \
+                    --agb_res_one $agb_res_one \
+                    --agb_residuals_film $agb_residuals_film \
+                    --sim_dist $sim_dist \
+                    --similarity $similarity \
+                    --similarity_weight $similarity_weight \
+                    --log_transform $log_transform \
+                    --SCC_ws $SCC_ws \
+                    --SCC_softmax $SCC_softmax \
+                    --oversampling $oversampling \
+                    --train_mask $train_mask \
+                    --val_mask $val_mask \
+                    --test_mask $test_mask \
+                    --sigreg_lambda $sigreg_lambda \
+                    --lite $lite \
+                    --lite_eval_big $lite_eval_big \
+                    --lite_chunk_size $lite_chunk_size \
+                    --aef $aef \
+                    --tessera $tessera \
+                    --hold_out_region $hold_out_region \
+                    --predict $predict \
+                    --ensemble $ensemble \
+                    --n_members $n_members \
+                    --drop_overlaps $drop_overlaps'''
+
+
+def main():
+    for relpath, spec in sorted(SPECS.items()):
+        vals = dict(DEFAULTS)
+        vals.update(spec['knobs'])
+        vals.update(SBATCH_DEFAULTS)
+        vals.update(spec['sbatch'])
+        path = os.path.join(REPO, relpath)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w') as fh:
+            fh.write(TEMPLATE.format(**vals))
+        print(f"  wrote {relpath}")
+    print(f"Generated {len(SPECS)} training launchers.")
+
+
+if __name__ == '__main__':
+    main()

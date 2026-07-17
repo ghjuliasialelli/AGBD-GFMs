@@ -172,8 +172,11 @@ if __name__ == '__main__' :
     # Set random seed
     rng = np.random.default_rng(seed=1)
 
-    # Paths
-    path_to_h5 = '/scratch3/gsialelli/patches'
+    # Paths come from config.sh at the repo root (see config.py).
+    import os, sys
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    from config import get_paths
+    path_to_h5 = get_paths(local = True)['h5']
     h5_fnames = [join(path_to_h5, f'data_subset-2020-v4_{i}-20.h5') for i in range(20)] 
 
     # Define the regions of interest, biomass bins of interest, and biomes of interest
@@ -214,14 +217,16 @@ nohup python find_indices.py --regions Greece Nepal > logs/4.txt 2>&1 &
 
 To merge them all : 
 
-import pickle
+import pickle, sys; sys.path.insert(0, '../..')
+from os.path import join
+from config import get_paths
 regions = ['California', 'Cuba', 'ShaanxiProvince', 'Paraguay', 'UnitedRepublicofTanzania', 'NewZealand', 'Ghana', 'Austria', 'FrenchGuiana', 'Greece', 'Nepal']
 all_indices = {}
 for region in regions :
-    with open(f'indices/subsampled_indices_{region}.pkl', 'rb') as f: 
+    with open(f'indices/subsampled_indices_{region}.pkl', 'rb') as f:
         region_indices = pickle.load(f)
     all_indices.update(region_indices)
 
-with open(f'/scratch3/gsialelli/patches/subsampled_indices.pkl', 'wb') as f: pickle.dump(all_indices, f)
+with open(join(get_paths(local = True)['h5'], 'subsampled_indices.pkl'), 'wb') as f: pickle.dump(all_indices, f)
 
 """

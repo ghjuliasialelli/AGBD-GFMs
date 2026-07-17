@@ -1109,9 +1109,17 @@ class GEDIDataset(Dataset):
 
 if __name__ == '__main__' :
 
+    # Paths come from config.sh at the repo root (see config.py), so this self-test
+    # runs anywhere. config.py lives at the repo root, which is not on the path when
+    # this module is run from model/.
+    import os, sys
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from config import get_paths
+    _paths = get_paths(local = True)
+
     config_dict = {
-        "model_path": '/scratch3/gsialelli/EcosystemAnalysis/Models/Biomes/weights/nico_film',
-        "model_name": '/scratch3/gsialelli/EcosystemAnalysis/Models/Biomes/weights/nico_film/local',
+        "model_path": join(_paths['ckpt'], 'nico_film'),
+        "model_name": join(_paths['ckpt'], 'nico_film', 'local'),
         "num_gpus": 1,
         "num_cpus": 8,
         "dataset_path": 'local',
@@ -1206,7 +1214,6 @@ if __name__ == '__main__' :
         "limit": False,
         "batch_size": 128,
         "years": [2019, 2020],
-        "pretrained_model": 'None',
         "freeze_shared": False,
         "random_spec": False,
         "scramble": False,
@@ -1238,12 +1245,12 @@ if __name__ == '__main__' :
 
     args = argparse.Namespace(**config_dict)
 
-    local_dataset_paths = {'h5':'/scratch3/gsialelli/patches', 
-                            'norm': '/scratch3/gsialelli/patches', 
-                            'map': '/scratch3/gsialelli/BiomassDatasetCreation/Data/download_Sentinel/biomes_split',
-                            'embeddings': f"/scratch3/gsialelli/EcosystemAnalysis/Models/Baseline/cat2vec/{'AGBD' if not args.lite else 'AGBD-Lite'}",
-                            'aef_h5': '/scratch3/gsialelli/patches/AEF',
-                            'aef_norm': '/scratch3/gsialelli/patches/AEF'}
+    local_dataset_paths = {'h5': _paths['h5'],
+                            'norm': _paths['norm'],
+                            'map': _paths['map'],
+                            'embeddings': join(_paths['embeddings'], 'AGBD' if not args.lite else 'AGBD-Lite'),
+                            'aef_h5': _paths['aef_h5'],
+                            'aef_norm': _paths['aef_norm']}
 
     from tqdm import tqdm
 

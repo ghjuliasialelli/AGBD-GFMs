@@ -14,14 +14,44 @@ For each of the 780 AGBRef polygons, we:
 Optional filters:
 - Exclude plots that overlap with training-set Sentinel-2 tiles
 - Restrict to plots within specified geographic regions
+
+NOTE: the absolute paths below (SPLITS_PKL, S2_TILES_SHP, REGIONS_PATH, NICO_DIR,
+CCI_DIR) point to the authors' cluster layout and MUST be edited for your environment.
+Paths built from BASE_DIR (AGBRef, cached results) are repo-relative and need no change.
 """
 
 PLOT = True # Set to True to enable plotting (scatter + binned)
 MAX_VALUE = 500
 METHODS = ["mean"] # ["mean", "median", "p90"]
 
-# AGBRef plots are 10km x 10km squares; half-side = 5000m
-_BUFFER_M = 5000
+# Each AGBRef record aggregates the field plots inside a 0.1 deg grid cell, so statistics are
+# taken over that exact cell (half-width 0.05 deg in lon/lat). The AGBRef *geometry* files carry an
+# extra 1 km download margin (see comparison/agbref/make_agbref_polygons.py); that margin is only
+# there so the AEF/CCI crops fully contain the cell and is deliberately clipped away here.
+HALF_DEG = 0.05
+_BUFFER_M = 5000  # legacy 10km-square half-side; kept only for make_utm_square (no longer used)
+
+# --- Coverage accounting ---
+# Statistics clip to the 0.1 deg cell, but a source raster can still fall short of it (e.g. an
+# interrupted download or a bad crop), in which case its mean would be an average over an unknown
+# sub-area. Coverage is therefore measured explicitly, against the cell rather than against the
+# raster's own extent (a short raster would otherwise report itself as fully covered).
+#
+# Each plot's 0.1 deg cell is rasterised onto a canonical 10m UTM grid and each source is
+# reprojected onto it, which gives:
+#   <src>_cov      fraction of the cell where that source has a valid pixel
+#   common_cov     fraction where BOTH sources are valid
+#   <src>_mean_common  mean over the common-valid pixels only, i.e. the two sources compared over
+#                      exactly the same ground area
+# With the 1 km download margin these should read ~100% for every plot; anything well below flags a
+# raster that needs re-downloading or re-cropping.
+COVERAGE = True     # Set to False to skip the common-grid pass (roughly halves the runtime)
+GRID_RES_M = 10     # Resolution of the canonical comparison grid, in metres
+
+# Minimum fraction of the plot that must be covered for a plot to be kept. Plots below this are
+# dropped, because their mean is taken over a sub-area and is not an estimate of the plot mean.
+# Set to None to disable the filter and only report coverage.
+MIN_COVERAGE = None
 
 # --- Training-set exclusion (set to False to disable) ---
 # When True, automatically loads training tile names from SPLITS_PKL and excludes
@@ -90,6 +120,9 @@ def _build_suffix():
 
 OUTPUT_SUFFIX = _build_suffix()
 PLOT_DIR = BASE_DIR / "plots"
+# Created here rather than assumed: the directory is a gitignored output, so a fresh clone has no
+# plots/ and every savefig at the end of the run dies -- after the full comparison has been computed.
+PLOT_DIR.mkdir(parents = True, exist_ok = True)
 
 
 # =========================================================================
@@ -127,6 +160,20 @@ def make_utm_square(lon, lat, half_size_m=_BUFFER_M):
     return square_4326, utm_epsg
 
 
+def make_cell(lon, lat, half_deg=HALF_DEG):
+    """
+    The exact 0.1 deg grid cell centred on (lon, lat), as an EPSG:4326 polygon, plus the local
+    UTM EPSG code.
+
+    This is the footprint the AGBRef ground truth (AGB_T_HA) aggregates over, so every statistic
+    is taken over this cell. The AGBRef geometry files carry an extra 1 km download margin so the
+    AEF/CCI crops fully contain the cell; that margin is deliberately excluded here. Note the cell
+    is built directly in lon/lat (not via a projected buffer) so it never picks up the Web-Mercator
+    cos(lat) distortion that produced the original shrunk squares.
+    """
+    return box(lon - half_deg, lat - half_deg, lon + half_deg, lat + half_deg), utm_epsg_from_lonlat(lon, lat)
+
+
 # =========================================================================
 # Helper: reproject a raster to a target CRS (in memory)
 # =========================================================================
@@ -146,6 +193,101 @@ def _reproject_raster_to_crs(src, target_crs):
         resampling=Resampling.nearest,
     )
     return dst_data, transform, target_crs, width, height
+
+
+# =========================================================================
+# Helper: canonical comparison grid for a plot
+# =========================================================================
+def make_utm_grid(lon, lat, res_m=GRID_RES_M):
+    """
+    Build the canonical grid covering a plot's 0.1 deg cell, in the plot's local UTM zone, at
+    res_m resolution.
+
+    The grid is derived from the cell geometry, NOT from any raster, which is the whole point:
+    coverage measured against a raster's own extent is 100% by construction, even when the
+    raster falls short. The cell is nearly axis-aligned in its own UTM zone, so its UTM bounding
+    box is essentially the cell itself.
+
+    Returns
+    -------
+    transform : Affine transform of the grid (north-up)
+    width, height : grid size in pixels
+    utm_epsg : EPSG code of the local UTM zone
+    """
+    cell_4326, utm_epsg = make_cell(lon, lat)
+    minx, miny, maxx, maxy = (
+        gpd.GeoSeries([cell_4326], crs="EPSG:4326").to_crs(epsg=utm_epsg).iloc[0].bounds
+    )
+    width = int(round((maxx - minx) / res_m))
+    height = int(round((maxy - miny) / res_m))
+    # from_origin takes the top-left corner, and yields a north-up transform
+    transform = rasterio.transform.from_origin(minx, maxy, res_m, res_m)
+    return transform, width, height, utm_epsg
+
+
+def _reproject_onto_grid(raster_path, nodata, transform, width, height, utm_epsg):
+    """
+    Reproject a raster's first band onto a fixed destination grid, returning a float32 array
+    where invalid (nodata, or outside the source extent) pixels are NaN.
+
+    Because the destination grid is fixed by the plot rather than by the source, pixels that the
+    source simply does not reach stay NaN - which is exactly the truncation we want to measure.
+    """
+    dst = np.full((height, width), np.nan, dtype=np.float32)
+    with rasterio.open(raster_path) as src:
+        reproject(
+            source=rasterio.band(src, 1),
+            destination=dst,
+            src_transform=src.transform,
+            src_crs=src.crs,
+            src_nodata=nodata,
+            dst_transform=transform,
+            dst_crs=CRS.from_epsg(utm_epsg),
+            dst_nodata=np.nan,
+            resampling=Resampling.nearest,
+        )
+    return dst
+
+
+def extract_common_stats(nico_path, cci_path, lon, lat):
+    """
+    Put both sources on the same canonical 10m grid over the plot, and measure how much of the
+    plot each one actually covers, plus their means over the pixels where both are valid.
+
+    CCI is ~100m in EPSG:4326 and nico_film is 10m in a UTM zone, so CCI is upsampled onto the
+    10m grid with nearest-neighbour: this replicates each CCI value across its ~10x10 block
+    rather than inventing intermediate values, so the CCI mean is unchanged where coverage is
+    complete, and is restricted to the right ground area where it is not.
+
+    Returns
+    -------
+    dict with nico_cov, cci_cov, common_cov (fractions of the plot) and
+    nico_mean_common, cci_mean_common (means over the common-valid pixels, or NaN).
+    """
+    transform, width, height, utm_epsg = make_utm_grid(lon, lat)
+    n_px = width * height
+    out = {"nico_cov": np.nan, "cci_cov": np.nan, "common_cov": np.nan,
+           "nico_mean_common": np.nan, "cci_mean_common": np.nan}
+
+    try:
+        nico = _reproject_onto_grid(nico_path, -9999.0, transform, width, height, utm_epsg)
+        cci = _reproject_onto_grid(cci_path, 65535, transform, width, height, utm_epsg)
+    except Exception as e:
+        print(f"  WARNING: could not build the common grid: {e}")
+        return out
+
+    nico_valid, cci_valid = ~np.isnan(nico), ~np.isnan(cci)
+    common = nico_valid & cci_valid
+
+    out["nico_cov"] = float(nico_valid.sum()) / n_px
+    out["cci_cov"] = float(cci_valid.sum()) / n_px
+    out["common_cov"] = float(common.sum()) / n_px
+
+    if common.any():
+        out["nico_mean_common"] = float(nico[common].mean())
+        out["cci_mean_common"] = float(cci[common].mean())
+
+    return out
 
 
 # =========================================================================
@@ -223,13 +365,15 @@ def compute_results():
     n = len(gdf)
     print(f"Loaded {n} AGBRef polygons")
 
-    # Rebuild square buffers in local UTM zones
-    print("Rebuilding plot geometries in local UTM zones...")
+    # Clip every plot to its exact 0.1 deg cell (the footprint AGB_T_HA aggregates over),
+    # discarding the 1 km download margin carried by the geometry file. Built directly in lon/lat,
+    # so no projected-buffer cos(lat) distortion.
+    print("Clipping plots to their 0.1 deg grid cells...")
     new_geoms = []
     utm_codes = []
     for _, row in gdf.iterrows():
-        sq, epsg = make_utm_square(row["POINT_X"], row["POINT_Y"], _BUFFER_M)
-        new_geoms.append(sq)
+        cell, epsg = make_cell(row["POINT_X"], row["POINT_Y"])
+        new_geoms.append(cell)
         utm_codes.append(epsg)
     gdf["geometry"] = new_geoms
     gdf["utm_epsg"] = utm_codes
@@ -250,6 +394,12 @@ def compute_results():
         "cci_mean": np.full(n, np.nan),
         "cci_median": np.full(n, np.nan),
         "cci_p90": np.full(n, np.nan),
+        # Coverage of the plot, and the means restricted to the commonly-covered area
+        "nico_cov": np.full(n, np.nan),
+        "cci_cov": np.full(n, np.nan),
+        "common_cov": np.full(n, np.nan),
+        "nico_mean_common": np.full(n, np.nan),
+        "cci_mean_common": np.full(n, np.nan),
     }
 
     for i in range(n):
@@ -279,6 +429,11 @@ def compute_results():
             results["cci_p90"][i] = p90
         else:
             print(f"  WARNING: CCI {cci_path.name} not found")
+
+        # --- Coverage, and the two sources compared over the same ground area ---
+        if COVERAGE and nico_path.exists() and cci_path.exists():
+            for k, v in extract_common_stats(nico_path, cci_path, row["POINT_X"], row["POINT_Y"]).items():
+                results[k][i] = v
 
         if (i + 1) % 100 == 0:
             print(f"  Processed {i + 1}/{n}")
@@ -380,6 +535,15 @@ def apply_filters(results):
     keep &= ~over_max
     print(f"  Dropped {n_over} plots with AGBRef > {MAX_VALUE} t/ha")
 
+    # --- Coverage ---
+    if COVERAGE and "common_cov" in results and MIN_COVERAGE is not None:
+        cov = results["common_cov"]
+        # A NaN coverage means the grid could not be built at all, which is also a failure
+        short = ~(cov >= MIN_COVERAGE)
+        n_short = (short & keep).sum()
+        keep &= ~short
+        print(f"  Dropped {n_short} plots covering < {MIN_COVERAGE:.0%} of the plot area")
+
     n_kept = keep.sum()
     print(f"  => {n_kept}/{n} plots retained")
 
@@ -387,12 +551,33 @@ def apply_filters(results):
 
 
 # === Load cached results or compute ===
+# The cache predates the coverage keys, so a cache without them must be rebuilt rather than
+# silently reused: the whole point of this pass is to notice short rasters.
+_REQUIRED_KEYS = {"nico_cov", "cci_cov", "common_cov", "nico_mean_common", "cci_mean_common"}
+
+# Bumped whenever the geometry the stats are taken over changes, so an old cache is never silently
+# reused. "cell-0.1deg-v1" = stats clipped to the exact 0.1 deg grid cell (was a 10km UTM square,
+# built off cos(lat)-shrunk polygons). Stored as a separate npz key, NOT inside results (every
+# results value must stay a length-n array for the post-hoc filter at the end of compute_results).
+_GEOM_VERSION = "cell-0.1deg-v1"
+
+results = None
 if CACHE_PATH.exists():
-    print(f"Loading cached results from {CACHE_PATH}")
-    results = dict(np.load(CACHE_PATH))
-else:
+    cached = dict(np.load(CACHE_PATH))
+    cached_ver = str(cached.pop("_geom_version", "legacy-10km-square"))
+    missing_keys = _REQUIRED_KEYS - set(cached)
+    if cached_ver != _GEOM_VERSION:
+        print(f"Cache at {CACHE_PATH} was built for geometry '{cached_ver}', need '{_GEOM_VERSION}'; recomputing")
+    elif COVERAGE and missing_keys:
+        print(f"Cache at {CACHE_PATH} predates the coverage keys ({', '.join(sorted(missing_keys))}); recomputing")
+    else:
+        print(f"Loading cached results from {CACHE_PATH}")
+        results = cached
+
+if results is None:
     results = compute_results()
-    np.savez(CACHE_PATH, **results)
+    CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(CACHE_PATH, _geom_version=np.array(_GEOM_VERSION), **results)
     print(f"Results cached to {CACHE_PATH}")
 
 # === Apply filters ===
@@ -415,10 +600,39 @@ def print_stats(name, pred, truth):
     r2 = 1 - ss_res / ss_tot
     print(f"  {name}: n={len(p)}, bias={bias:.2f}, RMSE={rmse:.2f}, MAE={mae:.2f}, r={corr:.3f}, R²={r2:.3f}")
 
+# === Coverage report ===
+# This is the check that the original truncation escaped: without it, a mean over a fraction of
+# the plot is indistinguishable from a mean over the whole plot.
+def print_coverage(name, cov):
+    finite = cov[~np.isnan(cov)]
+    n_nan = int(np.isnan(cov).sum())
+    if len(finite) == 0:
+        print(f"  {name}: no coverage measured ({n_nan} NaN)")
+        return
+    print(f"  {name}: median={np.median(finite):6.1%}  mean={finite.mean():6.1%}  "
+          f"min={finite.min():6.1%}   full(>=99%)={int((finite >= 0.99).sum()):3d}/{len(finite)}  "
+          f"<50%={int((finite < 0.5).sum()):3d}  NaN={n_nan}")
+
+if COVERAGE and "common_cov" in results:
+    print("\n=== Plot coverage (fraction of the 10km x 10km plot) ===")
+    print_coverage("nico_film ", results["nico_cov"])
+    print_coverage("CCI       ", results["cci_cov"])
+    print_coverage("common    ", results["common_cov"])
+
+    n_short = int((results["common_cov"] < 0.99).sum())
+    if n_short:
+        print(f"\n  WARNING: {n_short} plot(s) are not fully covered, so their mean is an average "
+              f"over a sub-area\n           rather than an estimate of the plot mean. If this is "
+              f"not expected, the AEF\n           download is truncated again - see AEF_COVERAGE_TODO.md.")
+
 print("\n=== Comparison Statistics (t/ha) ===")
 if "mean" in METHODS:
     print_stats("nico_mean  ", results["nico_mean"], results["agbref"])
     print_stats("cci_mean   ", results["cci_mean"], results["agbref"])
+    if COVERAGE and "nico_mean_common" in results:
+        # Same plots, but both sources averaged over exactly the same ground area
+        print_stats("nico_common", results["nico_mean_common"], results["agbref"])
+        print_stats("cci_common ", results["cci_mean_common"], results["agbref"])
 if "median" in METHODS:
     print_stats("nico_median", results["nico_median"], results["agbref"])
     print_stats("cci_median ", results["cci_median"], results["agbref"])

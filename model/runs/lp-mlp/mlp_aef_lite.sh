@@ -2,13 +2,21 @@
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=120:00:00
-#SBATCH --output=/cluster/scratch/gsialelli/logs/training-%A_%a.txt
-#SBATCH --error=/cluster/scratch/gsialelli/logs/training-%A_%a.txt
+#SBATCH --output=/cluster/scratch/gsialelli/logs/training-%A.txt
+#SBATCH --error=/cluster/scratch/gsialelli/logs/training-%A.txt
 #SBATCH --mem-per-cpu=4G
-#SBATCH --array=1-3
 #SBATCH --job-name=models
+#SBATCH --array=1-3
 #SBATCH --gpus=rtx_4090:1
-#SBATCH --tmp=300G
+
+# --- AGBD-GFMs config ----------------------------------------------------------
+# Locate config.sh at the repo root (walk up from the working directory) and
+# source it: provides $AGBD_ENV and every AGBD_* path used below. Launchers are
+# meant to be run from inside the repo (the model/ directory for train & eval).
+_agbd_dir="$(pwd)"
+while [ "$_agbd_dir" != "/" ] && [ ! -f "$_agbd_dir/config.sh" ]; do _agbd_dir="$(dirname "$_agbd_dir")"; done
+if [ ! -f "$_agbd_dir/config.sh" ]; then echo "config.sh not found; run from inside the AGBD-GFMs repo" >&2; exit 1; fi
+source "$_agbd_dir/config.sh"
 
 ################################################################################################################################
 
@@ -19,6 +27,12 @@ lite_chunk_size=1 # chunk size to use when lite is true
 
 # Whether to use AEF embeddings
 aef="true"
+
+# Whether to use TESSERA embeddings (Lite only)
+tessera="false"
+
+# Subset of AEF embedding bands ("all" = the full 64). Drives --in_features only.
+aef_bands=("all")
 drop_overlaps="false" # drop AGBD test patches that overlap with the AEF train set
 
 # Whether to move everything to $TMPDIR, or read everything from $SCRATCH
@@ -31,15 +45,15 @@ current_directory=$(pwd)
 echo "Current Directory: $current_directory"
 first_part=$(echo "$current_directory" | cut -d'/' -f2)
 
-if [ "$first_part" == "cluster" ]
+if [ "$AGBD_ENV" == "cluster" ]
 then
 
     module load stack/2024-06 gcc/12.2.0
     module load stack/2024-06 python_cuda/3.11.6
-    source /cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Biomes/agbd/bin/activate
+    source ${AGBD_CLUSTER_VENV}
 
     JOB_ID=$SLURM_ARRAY_JOB_ID
-    MODEL_IDX=$SLURM_ARRAY_TASK_ID
+    MODEL_IDX=${SLURM_ARRAY_TASK_ID:-0}
     NCPUS=$SLURM_CPUS_PER_TASK
     NNODES=$SLURM_NNODES
     NGPUS=$SLURM_GPUS
@@ -56,45 +70,46 @@ else
     NNODES=1
 fi
 
-if [ "$first_part" == "cluster" ]; then
+if [ "$AGBD_ENV" == "cluster" ]; then
     echo "Running on a cluster"
     
-
     if [ "$tmpdir" == "true" ]; then
         echo "Using TMPDIR for dataset"
-
+    
         # Move the .h5 files, and the statistics
         if [ "$lite" == "true" ]; then
-            rclone copy /cluster/work/igp_psr/gsialelli/Data/patches/AGBD-Lite/ ${TMPDIR} --exclude "AGBD-test.h5" --include "*.h5" --include "AGBD-Lite-statistics.pkl" --transfers 16 --checkers 32
-            cp /cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Baseline/cat2vec/AGBD-Lite/embeddings_train_lite.csv ${TMPDIR}
-            cp /cluster/work/igp_psr/gsialelli/AGBD-GFM/agbd-lite/mapping_lite_to_og.pkl ${TMPDIR}
+            rclone copy ${AGBD_CLUSTER_H5}/AGBD-Lite/ ${TMPDIR} --exclude "AGBD-test.h5" --include "*.h5" --include "AGBD-Lite-statistics.pkl" --transfers 16 --checkers 32
+            cp ${AGBD_CLUSTER_EMBEDDINGS}/AGBD-Lite/embeddings_train_lite.csv ${TMPDIR}
+            cp ${AGBD_CLUSTER_AUX}/agbd-lite/mapping_lite_to_og.pkl ${TMPDIR}
             if [ "$lite_eval_big" == "true" ]; then
-                rclone copy /cluster/work/igp_psr/gsialelli/Data/patches/AGBD-Lite/AGBD-test.h5 ${TMPDIR} --transfers 16 --checkers 32
+                rclone copy ${AGBD_CLUSTER_H5}/AGBD-Lite/AGBD-test.h5 ${TMPDIR} --transfers 16 --checkers 32
             fi
         fi
         if [ "$lite" == "false" ]; then
-            rclone copy /cluster/work/igp_psr/gsialelli/Data/patches/ ${TMPDIR} --include "*v4_*-20.h5" --include "statistics_subset_2019-2020-v4*.pkl" --include "AGBD_statistics_2019-2020_global.pkl" --transfers 16 --checkers 32
+            rclone copy ${AGBD_CLUSTER_H5}/ ${TMPDIR} --include "*v4_*-20.h5" --include "statistics_subset_2019-2020-v4*.pkl" --include "AGBD_statistics_2019-2020_global.pkl" --transfers 16 --checkers 32
         fi
         if [ "$aef" == "true" ]; then
-            rclone copy /cluster/work/igp_psr/gsialelli/Data/patches/AEF/ ${TMPDIR} --include "*.h5" --include "*statistics*.pkl" --transfers 16 --checkers 32
+            rclone copy ${AGBD_CLUSTER_AEF_H5}/ ${TMPDIR} --include "*.h5" --include "*statistics*.pkl" --transfers 16 --checkers 32
+        fi
+        if [ "$tessera" == "true" ]; then
+            rclone copy ${AGBD_CLUSTER_TESSERA_H5}/ ${TMPDIR} --include "TESSERA-Lite-*.h5" --include "*statistics*.pkl" --transfers 16 --checkers 32
         fi
 
         # Other files
-        cp /cluster/work/igp_psr/gsialelli/Data/AGB/biomes_splits_to_name.pkl ${TMPDIR}
-        cp /cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Baseline/cat2vec/AGBD/embeddings_train.csv ${TMPDIR}
-        cp /cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Biomes/helper/tiles_per_region.pkl ${TMPDIR}
-        cp /cluster/work/igp_psr/gsialelli/AGBD-GFM/aef-dwn/AEF_overlaps.pkl ${TMPDIR}
+        cp ${AGBD_CLUSTER_AGB}/biomes_splits_to_name.pkl ${TMPDIR}
+        cp ${AGBD_CLUSTER_EMBEDDINGS}/AGBD/embeddings_train.csv ${TMPDIR}
+        cp ${AGBD_CLUSTER_HELPER}/tiles_per_region.pkl ${TMPDIR}
+        cp ${AGBD_CLUSTER_AUX}/aef-dwn/AEF_overlaps.pkl ${TMPDIR}
 
     else
         echo "Using SCRATCH for dataset"
     fi
 
-elif [ "$first_part" == "scratch3" ]; then
+elif [ "$AGBD_ENV" != "cluster" ]; then
     echo "Running on a local machine"
 else
     echo "Environment unknown"
 fi
-
 
 
 ##################################################################################################################
@@ -102,6 +117,19 @@ fi
 
 # Loss function
 loss_fn='MSE'
+
+# Target variable
+predict="agbd"
+if [ "$predict" == "agbd" ] || [ "$predict" == "rh98" ]
+then
+    num_outputs=1
+elif [ "$predict" == "biome" ]
+then
+    num_outputs=14
+else
+    echo "Invalid target specified. Please choose one of 'agbd', 'rh98', or 'biome'."
+    exit 1
+fi
 
 # Architecture
 arch="mlp"
@@ -216,6 +244,7 @@ fi
 # gedi dates
 gedi_dates="false"
 
+# Biome/region FiLM layers
 # input for the FiLM layers & how to encode it
 region="false"
 biome="false"
@@ -225,12 +254,42 @@ emb_cat2vec="false"
 emb_sincos="false"
 biome_dim=64
 linear_emb="false"
+# Ensemble FiLM
+ensemble="false"
+n_members=1
+
 
 # Year to train on
 years=(2019 2020)
 
 echo "Year: ${years[@]}"
 echo "Architecture: $arch"
+
+# If we predict the biome, we cannot use it for FiLM
+if [ "$predict" == "biome" ] && [ "$film" == "true" ]
+then
+    biome="false"
+fi
+
+# Which region to hold out for testing
+geo_ablation="false"
+if [ "$geo_ablation" == "true" ]
+then
+    regions=("Europe" "South Asia" "Australasia" "Africa" "North America" "South America")
+    if [ "$AGBD_ENV" == "cluster" ]
+    then
+        region_id=$SLURM_ARRAY_TASK_ID
+    else
+        region_id=1
+    fi
+    hold_out_region=${regions[$((region_id-1))]} # because array starts at 1
+    echo "Holding out region: $hold_out_region"
+else
+    hold_out_region="None"
+fi
+
+
+# Features counts and args checks ################################################################################################
 
 # Define the dimension of the "biome" embeddings for the FiLM layers
 if [ "$biome" == "true" ]; then
@@ -274,6 +333,11 @@ then
     fi
 fi
 
+if [ "$ensemble" == "true" ]
+then
+    emb_dim=$n_members # n_members dimensions for the ensemble one-hot encoding
+fi
+
 # Check that if aspect or slope are true, then topo must be true
 if [ "$aspect" == "true" ] || [ "$slope" == "true" ] && [ "$topo" == "false" ]; then
     echo "If aspect or slope are true, then topo must be true."
@@ -308,7 +372,6 @@ fi
 channel_dims=(32 32 64 128 128 128)
 leaky_relu="false"
 max_pool="false"
-freeze="false"
 
 # Training arguments
 n_epochs=50
@@ -321,7 +384,6 @@ gamma=0.1
 patience=1000
 min_delta=0.0
 chunk_size=1
-num_outputs=1
 sigreg_lambda=0.05
 
 # Sanity check
@@ -421,14 +483,26 @@ fi
 # aef embeddings
 if [ "$aef" == "true" ]
 then
-    in_features=$((in_features+64)) # + 64 because 64dim AEF embeddings
+    if [ "${aef_bands[0]}" == "all" ]
+    then
+        num_aef_bands=64
+    else
+        num_aef_bands=${#aef_bands[@]}
+    fi
+    in_features=$((in_features+num_aef_bands)) # AEF embedding dims
+fi
+
+# tessera embeddings
+if [ "$tessera" == "true" ]
+then
+    in_features=$((in_features+128)) # + 128 because 128dim TESSERA embeddings
 fi
 
 # Output path and model name #####################################################################################
 
-if [ "$first_part" == "cluster" ]
+if [ "$AGBD_ENV" == "cluster" ]
 then
-    model_path=/cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Biomes/weights/${arch}
+    model_path=${AGBD_CLUSTER_CKPT}/weights/$"mlp"
     if [ "$tmpdir" == "true" ]; then
         dataset_path=$TMPDIR
     else
@@ -436,17 +510,21 @@ then
     fi
     model_name=${model_path}/${JOB_ID}-${MODEL_IDX}
 else
-    model_path=/scratch3/gsialelli/EcosystemAnalysis/Models/Biomes/weights/${arch}
+    model_path=${AGBD_LOCAL_CKPT}/$"mlp"
     dataset_path='local'
     model_name=${model_path}/local
 fi
 
 # Launch training ################################################################################################
+echo "NNODES: $NNODES"
+echo "NGPUS: $NGPUS"
 
 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=$NNODES --nproc_per_node=$NGPUS \
-            train.py --model_path $model_path \
+        train.py    --model_path $model_path \
                     --model_name $model_name \
                     --dataset_path $dataset_path \
+                    --stats_hold_out_region "None" \
+                    --stats_keep_region "false" \
                     --augment "false" \
                     --norm "false" \
                     --arch $arch \
@@ -483,13 +561,13 @@ torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=$NNODES --npro
                     --patch_size ${patch_size[@]} \
                     --chunk_size $chunk_size \
                     --years ${years[@]} \
-                    --freeze $freeze \
                     --num_gpus $NGPUS \
                     --num_cpus $NCPUS \
                     --film $film \
                     --biome_dim $biome_dim \
                     --emb_dim $emb_dim \
                     --region $region \
+                    --biome $biome \
                     --num_sepconv_blocks $num_sepconv_blocks \
                     --num_sepconv_filters $num_sepconv_filters \
                     --long_skip $long_skip \
@@ -534,6 +612,9 @@ torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=$NNODES --npro
                     --lite_eval_big $lite_eval_big \
                     --lite_chunk_size $lite_chunk_size \
                     --aef $aef \
-                    --drop_overlaps $drop_overlaps \
-                    --stats_hold_out_region "None" \
-                    --stats_keep_region "false"
+                    --tessera $tessera \
+                    --hold_out_region $hold_out_region \
+                    --predict $predict \
+                    --ensemble $ensemble \
+                    --n_members $n_members \
+                    --drop_overlaps $drop_overlaps

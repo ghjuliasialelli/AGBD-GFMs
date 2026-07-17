@@ -1,0 +1,40 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the paper below."
+title: "Above-ground Biomass Estimation with Geospatial Foundation Models"
+type: software
+license: MIT
+repository-code: "https://github.com/ghjuliasialelli/AGBD-GFMs"
+authors:
+  - family-names: Sialelli
+    given-names: Ghjulia
+    affiliation: "ETH Zurich"
+    email: gsialelli@ethz.ch
+  - family-names: Scheibenreif
+    given-names: Linus
+    affiliation: "ETH Zurich"
+  - family-names: Wegner
+    given-names: "Jan Dirk"
+    affiliation: "University of Zurich"
+  - family-names: Schindler
+    given-names: Konrad
+    affiliation: "ETH Zurich"
+# --- Preprint details: FILL IN once the arXiv preprint is posted ---
+preferred-citation:
+  type: article
+  title: "Above-ground Biomass Estimation with Geospatial Foundation Models"
+  authors:
+    - family-names: Sialelli
+      given-names: Ghjulia
+    - family-names: Scheibenreif
+      given-names: Linus
+    - family-names: Wegner
+      given-names: "Jan Dirk"
+    - family-names: Schindler
+      given-names: Konrad
+  year: 2026            # TODO: confirm publication year
+  journal: "arXiv preprint"
+  url: "https://arxiv.org/abs/XXXX.XXXXX"   # TODO: arXiv URL
+  identifiers:
+    - type: other
+      value: "arXiv:XXXX.XXXXX"             # TODO: arXiv ID
+      description: "arXiv preprint ID"

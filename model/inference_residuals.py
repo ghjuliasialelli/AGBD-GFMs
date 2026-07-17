@@ -12,6 +12,12 @@ footprints, to compute the residuals and provide it as input to the model.
 import time
 from os.path import join
 import os, pickle, argparse
+
+# config.py lives at the repo root, but this package is run with model/ as the working
+# directory, so the root has to be put on the path explicitly before importing it.
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import WANDB_ENTITY
 import torch
 import numpy as np
 import rasterio as rs
@@ -156,7 +162,7 @@ def get_teacher(args, device, ckpt_path) :
     api = wandb.Api()
     wandb_mapping = get_mapping(api, args.teacher_arch)
     wandb_name = wandb_mapping[args.teacher]
-    cfg = api.run(f'gs-tp-biomass/{args.teacher_arch}/{wandb_name}').config
+    cfg = api.run(f'{WANDB_ENTITY}/{args.teacher_arch}/{wandb_name}').config
     for key, value in cfg.items(): setattr(ts_args, key, value)
 
     # Get the path to the saved model
@@ -324,7 +330,7 @@ def run_inference():
     api = wandb.Api()
     wandb_mapping = get_mapping(api, arch)
     wandb_name = wandb_mapping[models[0]]
-    cfg = api.run(f'gs-tp-biomass/{arch}/{wandb_name}').config
+    cfg = api.run(f'{WANDB_ENTITY}/{arch}/{wandb_name}').config
     for key, value in cfg.items(): setattr(args, key, value)
     args = init_args_dataset(args)
 

@@ -201,7 +201,6 @@ def setup_parser():
     parser.add_argument("--temp_ablation", type = str2bool, default = 'false', help = 'Whether to do the temporal ablation experiments.')
     parser.add_argument("--subsample_2020", type = str2bool, default = 'false', help = 'Whether to subsample the 2020 data to the same number of samples as 2019.')
     parser.add_argument("--years_stats", type = StrOrNone, default = 'None', help = 'Years to consider for the normalization statistics, in the format "2019-2020". If None, it will be inferred from the years or trained_years arguments.')
-    parser.add_argument("--pretrained_model", type = str, default = 'None', help = 'Model.')
     parser.add_argument("--sigreg_lambda", type = float, default = 0.0, help = 'Weight for the SigREG loss.')
 
     # FCN model arguments

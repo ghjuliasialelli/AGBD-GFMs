@@ -10,6 +10,15 @@
 #SBATCH --gpus=rtx_4090:1
 #SBATCH --tmp=300G
 
+# --- AGBD-GFMs config ----------------------------------------------------------
+# Locate config.sh at the repo root (walk up from the working directory) and
+# source it: provides $AGBD_ENV and every AGBD_* path used below. Launchers are
+# meant to be run from inside the repo (the model/ directory for train & eval).
+_agbd_dir="$(pwd)"
+while [ "$_agbd_dir" != "/" ] && [ ! -f "$_agbd_dir/config.sh" ]; do _agbd_dir="$(dirname "$_agbd_dir")"; done
+if [ ! -f "$_agbd_dir/config.sh" ]; then echo "config.sh not found; run from inside the AGBD-GFMs repo" >&2; exit 1; fi
+source "$_agbd_dir/config.sh"
+
 ################################################################################################################################
 
 # Whether to use the normal AGBD dataset, or the AGBD-Lite dataset
@@ -32,10 +41,10 @@ current_directory=$(pwd)
 echo "Current Directory: $current_directory"
 first_part=$(echo "$current_directory" | cut -d'/' -f2)
 
-if [ "$first_part" == "cluster" ]; then
+if [ "$AGBD_ENV" == "cluster" ]; then
     module load stack/2024-06 gcc/12.2.0
     module load stack/2024-06 python_cuda/3.11.6
-    source /cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Biomes/agbd/bin/activate
+    source ${AGBD_CLUSTER_VENV}
 
     JOB_ID=$SLURM_ARRAY_JOB_ID
     MODEL_IDX=${SLURM_ARRAY_TASK_ID:-0}
@@ -53,33 +62,33 @@ else
     NNODES=1
 fi
 
-if [ "$first_part" == "cluster" ]; then
+if [ "$AGBD_ENV" == "cluster" ]; then
     echo "Running on a cluster"
     if [ "$tmpdir" == "true" ]; then
         echo "Using TMPDIR for dataset"
         if [ "$lite" == "true" ]; then
-            rclone copy /cluster/work/igp_psr/gsialelli/Data/patches/AGBD-Lite/ ${TMPDIR} --exclude "AGBD-test.h5" --include "*.h5" --include "AGBD-Lite-statistics.pkl" --transfers 16 --checkers 32
-            cp /cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Baseline/cat2vec/AGBD-Lite/embeddings_train_lite.csv ${TMPDIR}
-            cp /cluster/work/igp_psr/gsialelli/AGBD-GFM/agbd-lite/mapping_lite_to_og.pkl ${TMPDIR}
+            rclone copy ${AGBD_CLUSTER_H5}/AGBD-Lite/ ${TMPDIR} --exclude "AGBD-test.h5" --include "*.h5" --include "AGBD-Lite-statistics.pkl" --transfers 16 --checkers 32
+            cp ${AGBD_CLUSTER_EMBEDDINGS}/AGBD-Lite/embeddings_train_lite.csv ${TMPDIR}
+            cp ${AGBD_CLUSTER_AUX}/agbd-lite/mapping_lite_to_og.pkl ${TMPDIR}
             if [ "$lite_eval_big" == "true" ]; then
-                rclone copy /cluster/work/igp_psr/gsialelli/Data/patches/AGBD-Lite/AGBD-test.h5 ${TMPDIR} --transfers 16 --checkers 32
+                rclone copy ${AGBD_CLUSTER_H5}/AGBD-Lite/AGBD-test.h5 ${TMPDIR} --transfers 16 --checkers 32
             fi
         fi
         if [ "$lite" == "false" ]; then
-            rclone copy /cluster/work/igp_psr/gsialelli/Data/patches/ ${TMPDIR} --include "*v4_*-20.h5" --include "*statistics*.pkl" --transfers 16 --checkers 32
+            rclone copy ${AGBD_CLUSTER_H5}/ ${TMPDIR} --include "*v4_*-20.h5" --include "*statistics*.pkl" --transfers 16 --checkers 32
         fi
         if [ "$aef" == "true" ]; then
-            rclone copy /cluster/work/igp_psr/gsialelli/Data/patches/AEF/ ${TMPDIR} --include "*.h5" --include "*statistics*.pkl" --transfers 16 --checkers 32
+            rclone copy ${AGBD_CLUSTER_AEF_H5}/ ${TMPDIR} --include "*.h5" --include "*statistics*.pkl" --transfers 16 --checkers 32
         fi
 
-        cp /cluster/work/igp_psr/gsialelli/Data/AGB/biomes_splits_to_name.pkl ${TMPDIR}
-        cp /cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Baseline/cat2vec/AGBD/embeddings_train.csv ${TMPDIR}
-        cp /cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Biomes/helper/tiles_per_region.pkl ${TMPDIR}
-        cp /cluster/work/igp_psr/gsialelli/AGBD-GFM/aef-dwn/AEF_overlaps.pkl ${TMPDIR}
+        cp ${AGBD_CLUSTER_AGB}/biomes_splits_to_name.pkl ${TMPDIR}
+        cp ${AGBD_CLUSTER_EMBEDDINGS}/AGBD/embeddings_train.csv ${TMPDIR}
+        cp ${AGBD_CLUSTER_HELPER}/tiles_per_region.pkl ${TMPDIR}
+        cp ${AGBD_CLUSTER_AUX}/aef-dwn/AEF_overlaps.pkl ${TMPDIR}
     else
         echo "Using SCRATCH for dataset"
     fi
-elif [ "$first_part" == "scratch3" ]; then
+elif [ "$AGBD_ENV" != "cluster" ]; then
     echo "Running on a local machine"
 else
     echo "Environment unknown"
@@ -209,7 +218,7 @@ geo_ablation="true"
 keep_region="true"
 if [ "$geo_ablation" == "true" ]; then
     regions=("SouthAsia" "Africa" "SouthAmerica")
-    if [ "$first_part" == "cluster" ]; then
+    if [ "$AGBD_ENV" == "cluster" ]; then
         region_id=$SLURM_ARRAY_TASK_ID
     else
         region_id=1
@@ -313,13 +322,13 @@ fi
 if [ "$aef" == "true" ]; then in_features=$((in_features+64)); fi
 
 # === paths =============================================================
-if [ "$first_part" == "cluster" ]; then
-    model_path=/cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Biomes/weights/${arch}
+if [ "$AGBD_ENV" == "cluster" ]; then
+    model_path=${AGBD_CLUSTER_CKPT}/weights/${arch}
     if [ "$tmpdir" == "true" ]; then dataset_path=$TMPDIR
     else dataset_path=$SCRATCH; fi
     model_name=${model_path}/${JOB_ID}-${MODEL_IDX}
 else
-    model_path=/scratch3/gsialelli/EcosystemAnalysis/Models/Biomes/weights/${arch}
+    model_path=${AGBD_LOCAL_CKPT}/${arch}
     dataset_path='local'
     model_name=${model_path}/local
 fi

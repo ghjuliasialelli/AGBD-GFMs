@@ -180,7 +180,12 @@ if __name__ == '__main__' :
     # Initialize variables
 
     np.random.seed(42) # Set the seed for reproducibility
-    path_patches = '/scratch3/gsialelli/patches'  # Path to the patches directory
+
+    # Path to the patches directory, from config.sh at the repo root (see config.py).
+    import os, sys
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    from config import get_paths
+    path_patches = get_paths(local = True)['h5']
     mode, keep_all = _parser() # Parse command-line arguments
     chunk_size = 32 # Chunk size for writing datasets
     WRITE_THRESHOLD = 5_000 # Number of samples to write at once

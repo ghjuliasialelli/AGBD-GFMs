@@ -10,6 +10,15 @@
 #SBATCH --gpus=1
 #SBATCH --gres=gpumem:16g
 
+# --- AGBD-GFMs config ----------------------------------------------------------
+# Locate config.sh at the repo root (walk up from the working directory) and
+# source it: provides $AGBD_ENV and every AGBD_* path used below. Launchers are
+# meant to be run from inside the repo (the model/ directory for train & eval).
+_agbd_dir="$(pwd)"
+while [ "$_agbd_dir" != "/" ] && [ ! -f "$_agbd_dir/config.sh" ]; do _agbd_dir="$(dirname "$_agbd_dir")"; done
+if [ ! -f "$_agbd_dir/config.sh" ]; then echo "config.sh not found; run from inside the AGBD-GFMs repo" >&2; exit 1; fi
+source "$_agbd_dir/config.sh"
+
 ##################################################################################################################
 # TO EDIT ########################################################################################################
 years=(2019 2020)
@@ -23,6 +32,9 @@ return_region="true"
 skip_preds="false"
 lite="true" # evaluate on AGBD-Lite test
 drop_overlap="false"
+stats_hold_out_region="None" # region whose stats file to load; "None" for global stats
+stats_keep_region="false"    # whether the stats file is for the kept region
+years_stats="2019-2020"      # years the models were trained on (for picking the stats file)
 
 # if lite is true and return_region is false, raise an error
 if [ "$lite" == "true" ] && [ "$return_region" == "false" ]; then
@@ -44,20 +56,20 @@ current_directory=$(pwd)
 echo "Current Directory: $current_directory"
 first_part=$(echo "$current_directory" | cut -d'/' -f2)
 
-if [ "$first_part" == "cluster" ]; then
+if [ "$AGBD_ENV" == "cluster" ]; then
     echo "Running on a cluster"
 
     module load stack/2024-06 gcc/12.2.0
     module load stack/2024-06 python_cuda/3.11.6
-    source /cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Biomes/agbd/bin/activate
+    source ${AGBD_CLUSTER_VENV}
     
     dataset_path=$TMPDIR
-    plot_folder="/cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Biomes/eval_plots/"
+    plot_folder="${AGBD_CLUSTER_PLOTS}/"
     
-elif [ "$first_part" == "scratch3" ]; then
+elif [ "$AGBD_ENV" != "cluster" ]; then
     echo "Running on a local machine"
     dataset_path='local'
-    plot_folder='/scratch3/gsialelli/EcosystemAnalysis/Models/Biomes/eval_plots/'
+    plot_folder="${AGBD_LOCAL_PLOTS}/"
     
 else
     echo "Environment unknown"
@@ -69,4 +81,6 @@ fi
 python eval.py  --dataset_path "$dataset_path" --arch "$arch" --models "${models[@]}" --years "${years[@]}" \
                 --plot_folder "$plot_folder" --mode "$mode" --offset "$offset" --min_offset "$min_offset" \
                 --max_offset "$max_offset" --return_region "$return_region" --skip_preds "$skip_preds" \
-                --lite "$lite" --bs "$bs" --drop_overlap "$drop_overlap"
+                --lite "$lite" --bs "$bs" --drop_overlap "$drop_overlap" \
+                --stats_hold_out_region "$stats_hold_out_region" --stats_keep_region "$stats_keep_region" \
+                --years_stats "$years_stats"

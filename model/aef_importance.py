@@ -23,6 +23,12 @@ import argparse
 import numpy as np
 import torch
 import wandb
+
+# config.py lives at the repo root, but this package is run with model/ as the working
+# directory, so the root has to be put on the path explicitly before importing it.
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import WANDB_ENTITY
 import matplotlib.pyplot as plt
 from os.path import join, exists
 from os import makedirs
@@ -54,7 +60,7 @@ def parse_args():
 
 
 def get_mapping(api, arch):
-    runs = api.runs(f"gs-tp-biomass/{arch}")
+    runs = api.runs(f"{WANDB_ENTITY}/{arch}")
     run_mapping, run_ckpt = {}, {}
     for run in runs:
         try:
@@ -292,7 +298,7 @@ if __name__ == '__main__':
     api = wandb.Api()
     wandb_mapping, ckpt_mapping = get_mapping(api, arch)
     wandb_name = wandb_mapping[model_name]
-    cfg = api.run(f'gs-tp-biomass/{arch}/{wandb_name}').config
+    cfg = api.run(f'{WANDB_ENTITY}/{arch}/{wandb_name}').config
     for key, value in cfg.items():
         setattr(args, key, value)
     args = init_args_dataset(args)

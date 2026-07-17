@@ -11,6 +11,12 @@ import numpy as np
 import rasterio as rs
 import xml.etree.ElementTree as ET
 import datetime as dt
+
+# config.py lives at the repo root, but this package is run with model/ as the working
+# directory, so the root has to be put on the path explicitly before importing it.
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import WANDB_ENTITY
 import glob
 from rasterio.transform import AffineTransformer
 from scipy.ndimage import distance_transform_edt
@@ -266,7 +272,7 @@ def get_mapping(api, arch) :
     """
     {'58742596-1': 'kpq024cl', '58742596-2': 'l7gnvpae'}
     """
-    runs = api.runs(f"gs-tp-biomass/{arch}")
+    runs = api.runs(f"{WANDB_ENTITY}/{arch}")
     run_mapping = {}
     for run in runs: run_mapping[run.name] = run.path[-1]
     return run_mapping

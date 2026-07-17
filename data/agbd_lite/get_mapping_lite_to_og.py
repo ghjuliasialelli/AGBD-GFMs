@@ -47,13 +47,21 @@ def get_tile_to_region_mapping(fnames, path_h5) :
 
 if __name__ == "__main__":
 
-    with open(join('/scratch3/gsialelli/patches', 'subsampled_indices.pkl'), 'rb') as f: indices = pickle.load(f)
+    # Paths come from config.sh at the repo root (see config.py). REPO is used for the
+    # metadata that ships with this repository rather than living in the data dirs.
+    import os, sys
+    REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    sys.path.insert(0, REPO)
+    from config import get_paths
+    _paths = get_paths(local = True)
+
+    with open(join(_paths['h5'], 'subsampled_indices.pkl'), 'rb') as f: indices = pickle.load(f)
 
     mapping = {}
     for mode in ['train', 'val', 'test'] :
         print(f'Processing mode: {mode}...')
 
-        with open('/scratch3/gsialelli/AGBD-GFM/aef-dwn/split_to_tiles.pkl', 'rb') as f: tiles_in_mode = pickle.load(f)[mode]
+        with open(join(REPO, 'data', 'aef', 'split_to_tiles.pkl'), 'rb') as f: tiles_in_mode = pickle.load(f)[mode]
 
         # Generate indices in a shuffled manner, to be able to write with a chunk size ~ batch size
         tuple_indices = []
