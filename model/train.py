@@ -12,7 +12,6 @@ import sys
 from models import Net
 from wrapper import Model
 from parser import setup_parser, check_args
-from dataset_biomes_sampler import GEDIDataset_biomes, PerBiomeSampler
 from dataset import GEDIDataset
 from os.path import join
 from torch.utils.data import DataLoader, Subset, ConcatDataset
@@ -143,39 +142,28 @@ def main():
                         log_transform = args.log_transform, predict = args.predict)
     
     # Define the Datasets and DataLoaders
-    if 'pretrained' in args.arch: # fine-tuning pretrained models on a one-biome-per-batch basis
-        train_dataset = GEDIDataset_biomes(paths = dataset_path, years = args.years, mode = "train", args = args, debug = debug)
-        val_dataset = GEDIDataset_biomes(paths = dataset_path, years = args.years, mode = "val", args = args, debug = debug)
-        test_dataset = GEDIDataset_biomes(paths = dataset_path, years = args.years, mode = "test", args = args, debug = debug)
-        train_sampler = PerBiomeSampler(dataset = train_dataset, seed = global_seed, batch_size = args.batch_size)
-        val_sampler = PerBiomeSampler(dataset = val_dataset, seed = global_seed, batch_size = args.batch_size)
-        test_sampler = PerBiomeSampler(dataset = test_dataset, seed = global_seed, batch_size = args.batch_size)
-        train_loader = DataLoader(train_dataset, batch_sampler = train_sampler, num_workers = cpus_per_task)
-        val_loader = DataLoader(val_dataset, batch_sampler = val_sampler, num_workers = cpus_per_task)
-        test_loader = DataLoader(test_dataset, batch_sampler = test_sampler, num_workers = cpus_per_task)
-    else: # Regular training
 
-        # Subsample 2020 for train
-        if args.subsample_2020 and 2020 in args.years:
-            train_dataset_2020 = train_dataset = GEDIDataset(paths = dataset_path, years = [2020], chunk_size = args.chunk_size, mode = "train", args = args, debug = debug, film = args.film, mask_s2 = args.train_mask)
-            rng = np.random.default_rng(seed = global_seed)
-            indices = rng.choice(len(train_dataset_2020), size = 2509225, replace = False)
-            train_dataset_2020_sub = Subset(train_dataset_2020, indices)
-            if 2019 in args.years:
-                train_dataset_2019 = GEDIDataset(paths = dataset_path, years = [2019], chunk_size = args.chunk_size, mode = "train", args = args, debug = debug, film = args.film, mask_s2 = args.train_mask)
-                train_dataset = ConcatDataset([train_dataset_2019, train_dataset_2020_sub])
-            else: train_dataset = train_dataset_2020_sub
-        else: train_dataset = GEDIDataset(paths = dataset_path, years = args.years, chunk_size = args.chunk_size, mode = "train", args = args, debug = debug, film = args.film, mask_s2 = args.train_mask)
+    # Subsample 2020 for train
+    if args.subsample_2020 and 2020 in args.years:
+        train_dataset_2020 = train_dataset = GEDIDataset(paths = dataset_path, years = [2020], chunk_size = args.chunk_size, mode = "train", args = args, debug = debug, film = args.film, mask_s2 = args.train_mask)
+        rng = np.random.default_rng(seed = global_seed)
+        indices = rng.choice(len(train_dataset_2020), size = 2509225, replace = False)
+        train_dataset_2020_sub = Subset(train_dataset_2020, indices)
+        if 2019 in args.years:
+            train_dataset_2019 = GEDIDataset(paths = dataset_path, years = [2019], chunk_size = args.chunk_size, mode = "train", args = args, debug = debug, film = args.film, mask_s2 = args.train_mask)
+            train_dataset = ConcatDataset([train_dataset_2019, train_dataset_2020_sub])
+        else: train_dataset = train_dataset_2020_sub
+    else: train_dataset = GEDIDataset(paths = dataset_path, years = args.years, chunk_size = args.chunk_size, mode = "train", args = args, debug = debug, film = args.film, mask_s2 = args.train_mask)
 
-        val_dataset = GEDIDataset(paths = dataset_path, years = args.years, chunk_size = args.chunk_size, mode = "val", args = args, debug = debug, film = args.film, mask_s2 = args.val_mask)
-        test_dataset = GEDIDataset(paths = dataset_path, years = args.years, chunk_size = args.chunk_size, mode = "test", args = args, debug = debug, film = args.film, mask_s2 = args.test_mask)
-        
-        bs = args.batch_size // args.lite_chunk_size if args.lite else args.batch_size
-        train_loader = DataLoader(train_dataset, batch_size = bs, shuffle = True, num_workers = cpus_per_task, pin_memory = True)
-        val_loader = DataLoader(val_dataset, batch_size = bs, shuffle = False, num_workers = cpus_per_task, pin_memory = True)
-        
-        bs = args.batch_size if ((not args.lite) or (args.lite and args.lite_eval_big)) else args.batch_size // args.lite_chunk_size
-        test_loader = DataLoader(test_dataset, batch_size = bs, shuffle = False, num_workers = cpus_per_task, pin_memory = True)
+    val_dataset = GEDIDataset(paths = dataset_path, years = args.years, chunk_size = args.chunk_size, mode = "val", args = args, debug = debug, film = args.film, mask_s2 = args.val_mask)
+    test_dataset = GEDIDataset(paths = dataset_path, years = args.years, chunk_size = args.chunk_size, mode = "test", args = args, debug = debug, film = args.film, mask_s2 = args.test_mask)
+
+    bs = args.batch_size // args.lite_chunk_size if args.lite else args.batch_size
+    train_loader = DataLoader(train_dataset, batch_size = bs, shuffle = True, num_workers = cpus_per_task, pin_memory = True)
+    val_loader = DataLoader(val_dataset, batch_size = bs, shuffle = False, num_workers = cpus_per_task, pin_memory = True)
+
+    bs = args.batch_size if ((not args.lite) or (args.lite and args.lite_eval_big)) else args.batch_size // args.lite_chunk_size
+    test_loader = DataLoader(test_dataset, batch_size = bs, shuffle = False, num_workers = cpus_per_task, pin_memory = True)
     
     # Train the model
     trainer.fit(model, train_dataloaders = train_loader, val_dataloaders = [val_loader, test_loader])

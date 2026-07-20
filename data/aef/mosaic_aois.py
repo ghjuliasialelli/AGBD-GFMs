@@ -25,10 +25,11 @@ from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 import argparse
 
-# An AGBRef cell is 0.1 deg plus a 1 km buffer, i.e. at most ~1.4 km / 10 m ~ 1400 px per side.
-# Anything dramatically larger means the tiles were placed in the wrong coordinate space and the
-# merge produced a mostly-empty bounding box spanning the gap. See _target_crs below.
-MAX_EXPECTED_PX = 4000
+# A mosaic much larger than the AOI it covers means the tiles were placed in the wrong coordinate
+# space and the merge produced a mostly-empty bounding box spanning the gap (see _target_crs).
+# The default suits AGBRef cells (0.1 deg + 1 km buffer -> ~1400 px per side); map-figure windows
+# cut by download_tile.py --window_km are larger, so this is a --max_px flag rather than a constant.
+DEFAULT_MAX_PX = 4000
 AEF_NODATA = -128
 
 
@@ -76,7 +77,7 @@ def _target_crs(datasets):
     return CRS.from_epsg((32600 if lat >= 0 else 32700) + zone)
 
 
-def process_aoi(aoi_dir, force=False):
+def process_aoi(aoi_dir, force=False, max_px=DEFAULT_MAX_PX):
     """Mosaic or rename .tiff files in an AOI directory."""
     aoi_id = basename(aoi_dir)
     target = join(aoi_dir, f"{aoi_id}.tiff")
@@ -150,9 +151,10 @@ def process_aoi(aoi_dir, force=False):
         # the raster up by ~50x, which is obvious in the metadata alone. Failing loudly here beats
         # writing a 96%-nodata mosaic that only surfaces later as an OOM -- or worse, as a
         # plausible-looking prediction if the box happens to have enough RAM to finish.
-        if mosaic.shape[1] > MAX_EXPECTED_PX or mosaic.shape[2] > MAX_EXPECTED_PX:
+        if mosaic.shape[1] > max_px or mosaic.shape[2] > max_px:
             return (f"Error {aoi_id}: implausible mosaic {mosaic.shape[1]}x{mosaic.shape[2]} px "
-                    f"(> {MAX_EXPECTED_PX}); tiles likely misplaced across CRSs.")
+                    f"(> {max_px}); tiles likely misplaced across CRSs. If this AOI is genuinely "
+                    f"this large (e.g. a --window_km map tile), raise --max_px.")
 
         with rs.open(target, "w", **meta) as dst:
             dst.write(mosaic)
@@ -171,6 +173,9 @@ if __name__ == "__main__":
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--force", action="store_true",
                         help="Re-mosaic even if <aoi>.tiff exists (e.g. after re-downloading the crops).")
+    parser.add_argument("--max_px", type=int, default=DEFAULT_MAX_PX,
+                        help="Reject a mosaic larger than this many px per side (guards against tiles "
+                             "misplaced across CRSs). Raise it for --window_km map tiles.")
     args = parser.parse_args()
 
     aoi_dirs = sorted(
@@ -182,7 +187,7 @@ if __name__ == "__main__":
     print(f"Processing {len(aoi_dirs)} AOIs (force={args.force}).")
 
     with ProcessPoolExecutor(max_workers=args.workers) as executor:
-        for result in executor.map(partial(process_aoi, force=args.force), aoi_dirs):
+        for result in executor.map(partial(process_aoi, force=args.force, max_px=args.max_px), aoi_dirs):
             print(f"  {result}")
 
     print("Done.")

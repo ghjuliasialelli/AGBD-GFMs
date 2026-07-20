@@ -31,7 +31,7 @@ AGBD-GFMs/
 │   ├── nico_net_film.py       # NicoNet + FiLM (supervised SOTA)
 │   ├── mlp.py  lp.py          # MLP / linear-probing heads for AEF & TESSERA embeddings
 │   ├── wrapper.py  loss.py  biomes.py  parser.py  weights_mapping.py
-│   ├── dataset.py  dataset_biomes_sampler.py
+│   ├── dataset.py
 │   ├── aef_importance.py + aef/*.npy     # AEF band-importance analysis
 │   ├── inference_aef.py  inference_ds.py  inference_residuals.py  inference_helper.py
 │   ├── inference/            # inference_aef.sh + per-tile lists
@@ -74,7 +74,7 @@ not need to hunt for them:
 
 | file | what it is |
 |---|---|
-| `data/biomes_splits_to_name.pkl` | train/val/test split as S2 tile names (306/67/106). Read by `dataset.py`, `dataset_biomes_sampler.py`, `gen_subsample.py`, `inference_residuals.py`. |
+| `data/biomes_splits_to_name.pkl` | train/val/test split as S2 tile names (306/67/106). Read by `dataset.py`, `gen_subsample.py`, `inference_residuals.py`. |
 | `data/agbd_lite/mapping_lite_to_og.pkl` | AGBD-Lite index → AGBD index. Regenerable with `data/agbd_lite/get_mapping_lite_to_og.py`. |
 | `data/agbd_lite/eval/embeddings/{AGBD,AGBD-Lite}/embeddings_train.csv` | cat2vec land-cover embeddings used by the FiLM layers. |
 | `data/aef/AEF_overlaps.pkl` | AGBD test patches that overlap AEF's training set; removed when `drop_overlaps="true"`. |

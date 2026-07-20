@@ -292,17 +292,22 @@ def encode_tile(tile_reader, transformer) :
 
     width, height = tile_reader.width, tile_reader.height
     top, bottom, right = tile_reader.xy(0,0), tile_reader.xy(height, 0), tile_reader.xy(0, width)
+    # The transformer must be built with always_xy = True, so these are (lon, lat) pairs.
     top, bottom, right = [transformer.transform(x,y) for (x,y) in [top, bottom, right]]
-    
-    # For longitude, we only need to calculate the first row, which we do by interpolating
-    dist = np.abs(top[0] - right[0])
-    incr = dist / (width - 1)
-    row = np.append(np.arange(start = top[0], stop = right[0], step = incr), right[0])[:10980]
 
-    # For latitude, we only need to calculate the first column, which we do by interpolating
-    dist = np.abs(top[1] - bottom[1]) 
-    incr = dist / (height - 1)
-    column = np.append(np.arange(start = top[1], stop = bottom[1], step = incr), bottom[1])[:10980]
+    # np.linspace, not np.arange. The previous version computed `incr` from np.abs(...), so the step
+    # was always positive; whenever start > stop (which is the normal case for latitude, since it
+    # decreases downwards in a north-up tile) np.arange returned an EMPTY array. np.append then made
+    # it length 1, and the `lat[:, i] = column` broadcast silently filled the whole channel with a
+    # single constant -- no error, just a constant coordinate fed to the model. linspace also hits
+    # both endpoints exactly and avoids arange's floating-point accumulation, and dropping the
+    # hardcoded [:10980] stops the tile size being baked in.
+
+    # Longitude varies along a row: interpolate the top edge, left to right.
+    row = np.linspace(top[0], right[0], width)
+
+    # Latitude varies down a column: interpolate the left edge, top to bottom.
+    column = np.linspace(top[1], bottom[1], height)
 
     # Now we duplicate the relevant row and column to have the desired shape
     lat, lon = np.zeros((height, width)), np.zeros((height, width))
@@ -498,7 +503,10 @@ def process_S2_tile(product, path_s2) :
 
                 # Extract the lat/lon for one of the bands
                 if band == 'B02' :
-                    transformer = Transformer.from_crs(crs, 'EPSG:4326')
+                    # always_xy is required: without it pyproj honours the EPSG:4326 authority axis
+                    # order and transform(x, y) returns (lat, lon), not (lon, lat) -- which silently
+                    # swapped the two channels below. Every other Transformer in this repo sets it.
+                    transformer = Transformer.from_crs(crs, 'EPSG:4326', always_xy = True)
                     lat_cos, lat_sin, lon_cos, lon_sin = encode_tile(src, transformer)
                     meta = src.meta
 

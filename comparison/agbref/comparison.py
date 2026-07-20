@@ -271,7 +271,11 @@ def extract_common_stats(nico_path, cci_path, lon, lat):
 
     try:
         nico = _reproject_onto_grid(nico_path, -9999.0, transform, width, height, utm_epsg)
-        cci = _reproject_onto_grid(cci_path, 65535, transform, width, height, utm_epsg)
+        # CCI has NO nodata: ESA declares none, and 0 means AGB = 0 Mg/ha (the maps are not
+        # forest-masked). This used to pass 65535, which matched 0% of pixels -- inert, but it
+        # implied the zeros were missing data. Every CCI pixel is valid, so `common` below is
+        # governed entirely by where nico_film/AEF is valid, which is the intended restriction.
+        cci = _reproject_onto_grid(cci_path, None, transform, width, height, utm_epsg)
     except Exception as e:
         print(f"  WARNING: could not build the common grid: {e}")
         return out
@@ -423,7 +427,9 @@ def compute_results():
         year_2digit = int(year) - 2000
         cci_path = CCI_DIR / f"CCI_AGBRef_{i}_{year_2digit}.tif"
         if cci_path.exists():
-            mean, median, p90 = extract_raster_stats(cci_path, geom, nodata=65535, utm_epsg=utm_epsg)
+            # nodata=None: see extract_common_stats -- CCI declares no nodata and 0 is a real
+            # 0 Mg/ha value, so every pixel inside the plot polygon counts.
+            mean, median, p90 = extract_raster_stats(cci_path, geom, nodata=None, utm_epsg=utm_epsg)
             results["cci_mean"][i] = mean
             results["cci_median"][i] = median
             results["cci_p90"][i] = p90
