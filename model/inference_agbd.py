@@ -265,7 +265,22 @@ def load_input(year, paths, tile_name, product_name, norm_values, cfg, alos_orde
     assert cfg.get('residuals', False) == False, 'Model uses residuals. Please refer to inference_residuals.py'
 
     # Concatenate the data ---------------------------------------------------------------------------------------
-    data = torch.from_numpy(np.concatenate(data, axis = -1)).to(torch.float)
+    # Cast each channel to float32 BEFORE concatenating, and drop each source as it is consumed.
+    #
+    # Several channels arrive as float64 (encode_tile's lat/lon come from np.linspace -> cos/sin,
+    # and lc_prob is float64), so a plain np.concatenate promotes the WHOLE 31-channel tile to
+    # float64: 10980 x 10980 x 31 x 8 B = 29.8 GB, and the following .to(torch.float) then allocates
+    # another 14.9 GB float32 copy while the ~15-20 GB source list is still alive. That is ~60 GB on
+    # a 62 GB box, and it OOM-killed (exit 137) every full-tile run regardless of the tile -- a
+    # control run of 49SBT, which had previously succeeded, died identically at a 54.1 GB sampled
+    # floor with the machine otherwise idle.
+    #
+    # This is BITWISE IDENTICAL to the old line: widening float32 -> float64 is exact, so rounding
+    # each channel to float32 here produces the same values as rounding the concatenated float64
+    # array afterwards. Peak drops to roughly the size of the output tensor plus the shrinking list.
+    for i in range(len(data)) :
+        data[i] = np.ascontiguousarray(data[i], dtype = np.float32)
+    data = torch.from_numpy(np.concatenate(data, axis = -1))
     
     # Append the biome embedding if FiLM is enabled --------------------------------------------------------------
     if cfg.get('film', False) : 

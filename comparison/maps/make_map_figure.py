@@ -1,10 +1,20 @@
 """
 
-Compose the side-by-side AGB map figure: AEF vs the AGBD-features baseline vs ESA CCI v6.0, for
-Australasia and Europe. See the TILES comment below for why Asia is not shown despite having the
-largest RMSE gap -- it is a deliberate, disclosable omission and the caption must reflect it.
+Compose the side-by-side AGB map figure: AEF vs the AGBD-features baseline vs the SSL4EO-MoCo
+benchmark vs ESA CCI v6.0, for Australasia, Europe and Asia. See the TILES comment below for which
+tile represents each region and why -- two Asian candidates are rejected there, and the caption must
+reflect that the tile shown is 49SBT rather than the largest-gap one.
 
-Rows are the three sources, columns the two regions, with one shared colorbar. The styling follows
+The SSL4EO-MoCo row is NOT like-for-like on two counts the caption MUST state:
+  - It is 30 m, not 10 m. The model predicts only the CENTRE pixel of each 25x25 AGBD patch (624/625
+    outputs never receive a gradient), so a dense output is invalid -- see model/inference_ssl4eo.py
+    and memory/pangaea-agbd-centre-pixel-only.md. Every output pixel here is one true centre-pixel
+    forward pass at a 3-pixel (30 m) stride; the coarser grid is inherent, not a downsample choice.
+  - Its cloud/shadow exposure differs slightly: it masks SCL 0/1/6/11 at inference (the
+    inference_agbd.py convention) whereas the AGBD/AEF rows here are masked only for WorldCover water
+    at figure time. In practice the scenes are near cloud-free on the shown windows, but say it.
+
+Rows are the four sources, columns the three regions, with one shared colorbar. The styling follows
 the repo's existing map-figure conventions (see EcosystemAnalysis/Models/Biomes/Sumatra/
 compose_figure.py): viridis, no ticks, bold per-panel titles, PDF + PNG at 300 dpi. The one
 departure is VMAX (see below).
@@ -38,8 +48,9 @@ from rasterio.windows import from_bounds
 from rasterio.transform import from_bounds as transform_from_bounds
 from rasterio.warp import reproject
 from rasterio.enums import Resampling
-from os.path import join, exists, dirname, abspath
+from os.path import join, exists, dirname, abspath, basename
 from os import makedirs
+import re
 
 import matplotlib
 matplotlib.use("Agg")
@@ -54,6 +65,11 @@ import matplotlib.patheffects as pe
 
 PRED_AGBD = "/scratch3/gsialelli/EcosystemAnalysis/Models/Biomes/predictions_maps/nico_film/59620098-1_59620098-1_59620098-1"
 PRED_AEF  = "/scratch3/gsialelli/EcosystemAnalysis/Models/Biomes/predictions_maps_aef/nico_film/59620113-1_59620113-1_59620113-1"
+# SSL4EO-MoCo (ViT-S/16) + RegUPerNet, fine-tuned on AGBD full, run centre-pixel-only at a 30 m
+# stride (see model/inference_ssl4eo.py). One file per tile, named `<tile>.tif`, already on the
+# AEF window in the tile's UTM CRS -- so it reads through the same from_bounds crop as every other
+# AGB row, at its own (coarser) grid. Provenance for these rasters is SSL4EO_MAPS_TODO.md.
+PRED_SSL4EO = "/scratch3/gsialelli/ssl4eo_maps/preds"
 # ESA CCI BIOMASS v6.0 2020, put onto each column's AEF grid by crop_cci_maps.py using NEAREST
 # neighbour. Nearest does not interpolate: every pixel here holds an original 100 m CCI cell value,
 # so the panel shows CCI's real numbers and renders at CCI's real resolution (visible 10x10 blocks)
@@ -62,26 +78,142 @@ PRED_AEF  = "/scratch3/gsialelli/EcosystemAnalysis/Models/Biomes/predictions_map
 # on identical ground; the only cost is a sub-cell (<=50 m) positional snap, negligible at 100 m.
 PRED_CCI  = "/scratch3/gsialelli/CCI/maps"
 
-# The three biggest-gap regions. dRMSE is the AEF-vs-AGBD-features improvement on the eval h5.
-# Australasia and Europe. Asia (45RXL, the largest gap at dRMSE 5.64) is deliberately NOT shown:
-# on that window AEF predicts a median of 214 t/ha with 37% of pixels above 250 and a max of 473 --
-# beyond anything AEF produced on any of the 666 AGBRef plots (its max there is 307.9), and ~2x both
-# the AGBD-features baseline (119) and ESA CCI v6 (91) on the identical window. It is steep eastern
-# Himalaya (Sikkim/Bhutan), hard terrain for all three models, and the behaviour is unexplained
-# rather than understood -- so it is omitted as anomalous, not as unflattering. The other Asian
-# candidate, 44RLS, saturates not at all (median 16.8, 0% above 250) but is low-biomass Terai
-# farmland, which would represent Asian forest no better than omitting it. Say so in the caption:
-# these are two regions, not "the top-gap regions".
+# Three regions: Australasia, Europe, Asia. dRMSE is the AEF-vs-AGBD-features improvement on the
+# eval h5 -- it is the SELECTION criterion, not a displayed number (see the "gedi" note below).
+#
+# Asia is represented by 49SBT (Qinling, Shaanxi), NOT by the largest-gap tile. Two other Asian
+# candidates were rejected, and the caption must say so rather than implying these are simply the
+# top-gap regions:
+#   45RXL - largest gap of all (dRMSE 5.64) but anomalous: AEF predicts a median of 214 t/ha with
+#           37% of pixels above 250 and a max of 473 -- beyond anything AEF produced on any of the
+#           666 AGBRef plots (max there 307.9), and ~2x both the AGBD-features baseline (119) and
+#           ESA CCI v6 (91) on the identical window. Steep eastern Himalaya (Sikkim/Bhutan), hard
+#           terrain for all three models. Omitted as unexplained, not as unflattering.
+#   44RLS - saturates not at all (median 16.8, 0% above 250) but is low-biomass Terai farmland,
+#           which would represent Asian forest no better than omitting the region entirely.
+# 49SBT was chosen because it is genuine mixed temperate forest AND it has by far the best GEDI
+# validation coverage of any candidate window (6381 cells in 2020 vs 6178 for 59GPM and ZERO for
+# 32TNS), so its panel header can carry a real, independently-sourced number.
+#
+# "drmse" is the tile SELECTION criterion only and is deliberately no longer displayed: it is a
+# dataset-wide eval-h5 number, so printing it on a per-tile map panel asserted something the panel
+# does not show. Each AGB PANEL now carries its own per-tile GEDI L4A RMSE instead (see "rmse"
+# below and gedi_per_tile_eval/metrics_4model.py: AEF-window scope, 2020 footprints, water-masked,
+# paired across all four maps).
+#
+# "rmse" carries per-tile GEDI L4A RMSE (t/ha) for EACH of the four AGB maps, keyed by ROW key, so
+# every panel can label its own accuracy -- this replaced the old two-model AEF-vs-AGBD header line
+# (2026-07-22). Numbers are Method A "paired4" from gedi_per_tile_eval/metrics_4model.py at scope
+# = each panel's DISPLAY crop (so the RMSE describes exactly the pixels shown, not a wider window --
+# only 59GPM crops; 49SBT/32TPT display == full AEF window), water-masked, and paired across all
+# four maps so every model is scored on an IDENTICAL set of GEDI footprints (n below). SSL4EO (30 m)
+# and CCI (100 m) carry a small resolution penalty
+# under this common-footprint scoring; evaluating each on its own native grid (Method B) moves them
+# by <=1 t/ha (SSL4EO) and ~4-5 t/ha (CCI), i.e. the ranking is not an artefact of resolution -- the
+# caption should say so. 32TNS is gone; 32TPT replaced it precisely because 32TNS has ZERO GEDI
+# footprints in its AEF window in any year.
+#
+# These numbers describe the CURRENT production rasters, which since 2026-07-21 are the
+# BILINEAR-DEM re-runs (see predictions_maps/.../nearest_dem_20260721/README.md). That choice was
+# made on appearance -- the bilinear maps have visibly less of the fine-scale striping -- and it
+# costs accuracy, so the caption must not present these AGBD numbers as the model's best:
+#         tile     AGBD RMSE  bilinear (production) / nearest (archived)
+#         59GPM        67.5 / 67.5     (wash; MAE 40.4 vs 41.5)
+#         32TPT        87.3 / 86.8     (wash; MAE 62.4 vs 63.3)
+#         49SBT       121.5 / 115.9    (WORSE: MAE 96.1 vs 91.4, R2 -0.425, bias -73.5 t/ha)
+# AEF is byte-identical between the two runs (it uses no DEM), which is the control confirming the
+# difference is the DEM channel and not pipeline drift.
+#
+# The underlying cause of the striping is NOT the DEM: it is topographic-illumination bias in the
+# AGBD-features model, which reads terrain shading as biomass -- r(prediction, cos solar incidence)
+# = -0.18 to -0.21, negative in 318 of 318 windows across all three tiles, with the sign holding
+# even though 59GPM's sun azimuth is ~100 deg from the other two. Bilinear DEMs suppress the
+# speckle largely by shifting the whole prediction DOWN (-8.2, -7.1, -0.3 t/ha tile means), which
+# is cosmetic. The model was also TRAINED on nearest-resampled DEMs, so this is additionally a
+# train/inference mismatch. Both facts must be disclosed if these maps are published.
+#
+# "crop" (left, bottom, right, top) in the tile's own UTM CRS, or None for the whole AEF window.
+# It is applied IDENTICALLY to all three rows, so a column stays a like-for-like comparison. Chosen
+# per tile by measurement, not by eye -- rationale inline below so it can be re-derived or retuned.
 TILES = [
-    {"tile": "59GPM", "region": "Australasia",  "drmse": 3.53},
-    {"tile": "32TNS", "region": "Europe",       "drmse": 3.22},
+    # 59GPM: a SQUARE 28.71 km window on Banks Peninsula, full north extent, ocean trimmed.
+    # Vertical: the peninsula's southern tip is y = 5137240 and the AEF window ran to y = 5124580,
+    # so the bottom 12.6 km was pure Pacific -- greyed by the water mask, carrying no information.
+    # Horizontal: cut to match that height, 9.3 km off the right and 3.0 km off the left, which
+    # centres Akaroa Harbour. A sweep of every horizontal offset put land at 79-80% across the
+    # board (max 80.0%), so the exact offset is a framing choice, not an optimisation.
+    # Net: land 46.2% -> 80.0%, and the panel stays square like the other two columns.
+    # Do NOT try to extend further north: land occupies row 0 of the AEF raster, so the window is
+    # already truncated at its northern edge. More north needs a new AEF download, not a new crop.
+    {"tile": "59GPM", "region": "Australasia",  "drmse": 3.53,
+     "rmse": {"aef": 64.28, "agbd": 66.81, "ssl4eo": 72.49, "cci": 90.32, "n": 5086},
+     "crop": (637460.0, 5137000.0, 666170.0, 5165710.0)},
+    # 32TPT (Tyrol, AUSTRIA -- 10.77-11.33 E, 47.15-47.53 N), swapped in 2026-07-21 to replace
+    # 32TNS. 32TNS had to go: its AEF window sits in Graubuenden/Valtellina (Switzerland/Italy)
+    # despite the "Austria" label, and it contains ZERO GEDI footprints in any year, so its panel
+    # header could never carry an honest number. 32TNS also ranked LAST of 28 Austrian tiles by
+    # footprint count (1,447 vs 285,988 for 32TPT). Its S2 scene was snow-dominated (21 May) too.
+    # No crop needed: this AEF mosaic is clean -- 0.00% nodata, exact 10.0 m, no edge frame, and
+    # the CCI block is already on its grid.
+    {"tile": "32TPT", "region": "Europe",       "drmse": 3.22,
+     "rmse": {"aef": 75.54, "agbd": 87.27, "ssl4eo": 103.77, "cci": 117.11, "n": 51995},
+     "crop": None},
+    # drmse here is Asia's REGION-level eval-h5 gap (5.64), the same number the original comment
+    # attached to Asia when 45RXL was the chosen representative. It is a per-region figure, so it
+    # does not change when the representative tile changes. Not displayed; selection criterion only.
+    #
+    # 49SBT: the AEF mosaic has a nodata frame -- 131 fully-empty rows on top, 111 on the bottom,
+    # 122 cols on the left (8.27% of the raster, and ALL of its nodata). Cause: the GEE export left
+    # three shards, two native EPSG:32649 (which tile together exactly) and one duplicate of the
+    # same ground in EPSG:32648. Warping that cross-zone shard into 32649 turns its rectangle into a
+    # skewed quadrilateral, so its BOUNDING BOX enlarged the mosaic by exactly those bands while
+    # contributing zero valid pixels. Verified: the mosaic's valid-data rectangle equals the union
+    # of the two native shards to within one pixel. This crop is that rectangle.
+    # The real fix is upstream -- re-mosaic 49SBT from the two `xma4334trh30x9qrf` shards ONLY and
+    # drop `x1q02j0mrxcvdop5j`; that also removes a needless warp and restores an exact 10.0 m pixel
+    # (the mosaic is currently 9.99576 m because of it). That needs an AEF inference re-run, so this
+    # crop is the no-recompute stand-in, not a substitute for fixing the mosaic.
+    {"tile": "49SBT", "region": "Asia",         "drmse": 5.64,
+     "rmse": {"aef": 95.57, "agbd": 121.46, "ssl4eo": 137.87, "cci": 175.59, "n": 5748},
+     "crop": (234297.1, 3724522.1, 275379.7, 3765694.6)},
 ]
 
+# The Sentinel-2 row goes FIRST: it is the input the AGBD-features model actually consumed, so the
+# figure reads input -> two model outputs -> reference product. Its "key" is special-cased in the
+# draw loop (3 bands, own stretch, no colorbar) -- everything else is a single AGB band.
+# SSL4EO-MoCo sits with the other two model outputs (input -> models -> reference), after the
+# AGBD-features baseline it is being compared against. Its label carries "(30 m)" because it is the
+# one row not at 10 m -- the resolution difference is real and must not be silent on the figure.
 ROWS = [
-    {"key": "aef",  "label": "AEF"},
-    {"key": "agbd", "label": "AGBD features"},
-    {"key": "cci",  "label": "ESA CCI v6.0"},
+    {"key": "s2",     "label": "Sentinel-2 RGB"},
+    {"key": "aef",    "label": "AEF"},
+    {"key": "agbd",   "label": "AGBD features"},
+    {"key": "ssl4eo", "label": "SSL4EO-MoCo\n(30 m)"},
+    {"key": "cci",    "label": "ESA CCI v6.0"},
 ]
+
+# Directory of unzipped .SAFE products. The specific product is NOT globbed by tile -- it is derived
+# from the AGBD prediction filename (see find_s2), because this directory holds more than one
+# acquisition for the same tile (59GPM has both 20200223 and 20200418) and picking the wrong one
+# would show a scene the models never saw, on a date months away, with no error raised.
+S2_DIR = "/scratch3/gsialelli/S2_L2A"
+
+# True-colour stretch percentiles, applied ONCE across all three bands of a panel (see read_rgb --
+# per-band stretching produces false colour casts). Percentile rather than a fixed range because
+# the three scenes are radically different (alpine, temperate forest, a peninsula in late summer)
+# and one fixed range either blows out or muddies at least one of them. This row is CONTEXT, not a
+# measurement: brightness is not comparable between panels -- say so in the caption.
+S2_PCT = (1, 99)
+
+# Display gamma applied AFTER the shared stretch. Sentinel-2 surface reflectance is bunched at the
+# dark end, so a purely linear stretch renders vegetated scenes muddy and forces the contrast up
+# until they look garish. Gamma < 1 lifts the midtones only.
+#
+# It is applied to all three channels EQUALLY, so like the shared stretch it changes brightness and
+# contrast but NOT hue -- x**g is monotonic and identical per channel, so the band ordering that
+# defines colour survives. This is the whole difference between this and per-band stretching:
+# tuning appearance is fine, fabricating colour is not.
+S2_GAMMA = 0.65
 
 # Repo convention (Sumatra/compose_figure.py) is 0-250; raised here because the AGBD-features
 # panels reach ~417 t/ha and 250 clipped them visibly. 400 covers the p99 of every panel shown.
@@ -113,10 +245,20 @@ SCALEBAR_NICE_KM = (1, 2, 5, 10, 20, 25, 50, 100)  # snap to a round number a re
 SCALEBAR_COLOR = "white"                         # over viridis; outlined below for the pale end
 SCALEBAR_OUTLINE = "black"
 
-# Render each panel at roughly this many pixels per side. The rasters are ~4000 px; at 300 dpi a
-# panel is only ~1200 px wide, so reading at full resolution would just be resampled away by
-# matplotlib -- and six full-resolution panels is 400 MB of float32 held at once for nothing.
-RENDER_PX = 1400
+# Cap on rendered pixels per panel side. None = NATIVE RESOLUTION (the default): every 10 m
+# prediction pixel is drawn, which is the point of the figure.
+#
+# This was previously a hard-coded 1400, which silently decimated each ~4100 px panel by step 3 --
+# nearest neighbour, so 8 of every 9 pixels were thrown away and the panels were effectively 30 m.
+# That undersells a 10 m product and, worse, aliases away exactly the fine-scale striping the
+# AGBD-features maps are being audited for. A figure must not quietly resample the thing it is
+# evidence about. Kept as a FLAG (--render-px) rather than a constant so a quick preview is still
+# cheap, per the "thresholds should be flags" rule.
+#
+# Note the downsampling path uses nearest, NOT averaging, and deliberately so: averaging would mix
+# the -9999 nodata sentinel into its neighbours, since nodata is only converted to NaN after the
+# read. So --render-px is a PREVIEW mode; published output should run at native resolution.
+RENDER_PX = None
 
 ###################################################################################################
 # Helpers
@@ -134,6 +276,124 @@ def find_agbd(tile) :
     """
     hits = sorted(glob.glob(join(PRED_AGBD, f"*_T{tile}_*.tif")))
     return hits[0] if hits else None
+
+
+def find_s2(agbd_path) :
+    """
+    Locate the R10m B04/B03/B02 JP2s of the S2 product that produced a given AGBD prediction.
+
+    Derived from the prediction filename rather than globbed by tile ON PURPOSE: S2_DIR holds
+    several acquisitions of the same tile (59GPM has 20200223 AND 20200418), so a tile glob would
+    happily return a scene from a different month that the model never saw. The prediction is named
+    `<product>_NA.tif`, which pins the acquisition exactly.
+
+    Args:
+    - agbd_path (str or None): path to the AGBD-features prediction for this tile.
+
+    Returns:
+    - list or None: [B04, B03, B02] paths (red, green, blue), or None if anything is missing.
+    """
+    if agbd_path is None : return None
+
+    product = basename(agbd_path)
+    for suffix in ("_NA.tif", ".tif") :
+        if product.endswith(suffix) :
+            product = product[: -len(suffix)]
+            break
+
+    safe = join(S2_DIR, f"{product}.SAFE")
+    if not exists(safe) : return None
+
+    # Both extensions are real: the standard products ship JP2, but the reprocessed N9999 32TNS
+    # product carries GeoTIFF bands instead. Globbing only *.jp2 silently lost that whole column.
+    paths = []
+    for band in ("B04", "B03", "B02") :
+        hits = []
+        for ext in ("jp2", "tif") :
+            hits += sorted(glob.glob(
+                join(safe, "GRANULE", "*", "IMG_DATA", "R10m", f"*_{band}_10m.{ext}")))
+        if not hits : return None
+        paths.append(hits[0])
+    return paths
+
+
+def boa_offset(jp2_path) :
+    """
+    Read BOA_ADD_OFFSET from a product's MTD_MSIL2A.xml.
+
+    Baseline >= 04.00 products store reflectance shifted by -1000; ignoring it does not error, it
+    just washes the image out. Parsed from the product's own metadata rather than inferred from the
+    baseline string, because the reprocessed N9999 product carries the offset too.
+
+    Args:
+    - jp2_path (str): path to any band JP2 inside the .SAFE.
+
+    Returns:
+    - float: the offset to ADD to raw DN (0.0 if the product declares none).
+    """
+    safe = jp2_path
+    while safe and not safe.endswith(".SAFE") : safe = dirname(safe)
+    mtd = join(safe, "MTD_MSIL2A.xml")
+    if not exists(mtd) : return 0.0
+
+    with open(mtd) as fh : text = fh.read()
+    m = re.search(r'BOA_ADD_OFFSET[^>]*>(-?\d+)', text)
+    return float(m.group(1)) if m else 0.0
+
+
+def read_rgb(paths, bounds, crs) :
+    """
+    Read a true-colour composite, cropped to `bounds` and downsampled for rendering.
+
+    Args:
+    - paths (list): [red, green, blue] band paths.
+    - bounds (tuple): (left, bottom, right, top) in the rasters' CRS, or None for the full scene.
+    - crs: the CRS `bounds` are in; asserted against each band.
+
+    Returns:
+    - np.ndarray: (H, W, 3) float in [0, 1], percentile-stretched.
+    - tuple: the bounds actually read.
+    - CRS: the rasters' CRS.
+    """
+    chans, out_bounds, out_crs = [], None, None
+    for p in paths :
+        with rs.open(p) as src :
+            if bounds is not None :
+                assert src.crs == crs, f"{p} is {src.crs}, expected {crs}"
+                window = from_bounds(*bounds, transform = src.transform)
+                out_bounds = bounds
+            else :
+                window = None
+                out_bounds = tuple(src.bounds)
+
+            h = int(window.height) if window is not None else src.height
+            w = int(window.width) if window is not None else src.width
+            step = 1 if RENDER_PX is None else max(1, int(round(max(h, w) / RENDER_PX)))
+            out_shape = (max(1, h // step), max(1, w // step))
+
+            band = src.read(1, window = window, out_shape = out_shape).astype(np.float32)
+            out_crs = src.crs
+
+        chans.append((band + boa_offset(p)) / 10000.0)
+
+    rgb = np.dstack(chans)
+
+    # ONE stretch shared by all three bands -- NOT per-band. Stretching each band to its own
+    # percentiles rescales the band RATIOS, and those ratios are precisely what colour is. On 49SBT
+    # the three bands have visibly different spreads (p2/p98 of 0.015-0.064 red, 0.025-0.083 green,
+    # 0.011-0.049 blue), so an independent stretch pushed near-neutral pixels to R 0.73 / G 0.56 /
+    # B 0.71 -- a magenta cast over 1.08% of the panel that looked like a sensor artefact in the
+    # scene. A shared low/high preserves the ratios and just sets overall brightness/contrast.
+    # Non-positive values are the fill/nodata sentinel and would drag the low end down, so they are
+    # excluded from the percentile computation but still clipped into range afterwards.
+    finite = rgb[np.isfinite(rgb) & (rgb > 0)]
+    if finite.size :
+        lo, hi = np.percentile(finite, S2_PCT)
+        if hi > lo : rgb = (rgb - lo) / (hi - lo)
+
+    # Clip BEFORE the gamma: x ** 0.65 on a negative x is NaN, and the low tail goes negative by
+    # construction after subtracting the 1st percentile.
+    return np.clip(rgb, 0, 1) ** S2_GAMMA, out_bounds, out_crs
 
 
 def read_panel(path, bounds = None, crs = None) :
@@ -162,7 +422,7 @@ def read_panel(path, bounds = None, crs = None) :
 
         h = int(window.height) if window is not None else src.height
         w = int(window.width) if window is not None else src.width
-        step = max(1, int(round(max(h, w) / RENDER_PX)))
+        step = 1 if RENDER_PX is None else max(1, int(round(max(h, w) / RENDER_PX)))
         out_shape = (max(1, h // step), max(1, w // step))
 
         data = src.read(1, window = window, out_shape = out_shape).astype(np.float32)
@@ -208,6 +468,26 @@ def water_mask(tile, bounds, crs, out_shape) :
     return np.isin(dst, WATER_CLASSES)
 
 
+def rmse_label(ax, spec, row_key) :
+    """Annotate an AGB panel with this map's per-tile GEDI RMSE, bottom-LEFT (the scale bar is
+    bottom-right). White text on a translucent dark box so it stays legible over any part of the
+    viridis ramp. Silently draws nothing if this row has no number (e.g. the S2 row, or a missing
+    entry) rather than printing a placeholder onto the map.
+
+    Args:
+        ax: the panel's axes.
+        spec (dict): a TILES entry; spec["rmse"] maps row key -> RMSE (t/ha), plus "n".
+        row_key (str): the ROWS key of this panel ("aef"/"agbd"/"ssl4eo"/"cci").
+    """
+    r = spec.get("rmse", {}).get(row_key)
+    if r is None : return
+    ax.text(0.035, 0.04, f"RMSE {r:.0f}", transform = ax.transAxes,
+            ha = "left", va = "bottom", fontsize = 8.5, color = "white", fontweight = "bold",
+            bbox = dict(boxstyle = "round,pad=0.25", fc = "black", ec = "none", alpha = 0.55))
+
+
+####################################################################################################
+
 def add_scalebar(ax, bounds, shape) :
     """
     Draw a scale bar in the bottom-right of a panel, sized from the panel's own ground extent.
@@ -247,6 +527,38 @@ def add_scalebar(ax, bounds, shape) :
             path_effects = stroke)
 
 
+def column_window(spec) :
+    """
+    Resolve a column's display window: the AEF footprint, or its "crop" override when set.
+
+    Args:
+    - spec (dict): a TILES entry.
+
+    Returns:
+    - tuple: (left, bottom, right, top) in the tile's UTM CRS, or None if the AEF panel is missing.
+    - CRS: the AEF raster's CRS, or None.
+    """
+    aef_path = join(PRED_AEF, f'{spec["tile"]}.tif')
+    if not exists(aef_path) : return None, None
+
+    with rs.open(aef_path) as s :
+        ab = s.bounds
+        crs = s.crs
+
+    if spec.get("crop") is None :
+        return tuple(ab), crs
+
+    cb = tuple(spec["crop"])
+    # Normalise both before comparing: AEF sources are south-up in places, so rasterio can report
+    # bounds.top < bounds.bottom and a raw comparison would silently invert.
+    a_x0, a_x1 = min(ab.left, ab.right), max(ab.left, ab.right)
+    a_y0, a_y1 = min(ab.bottom, ab.top), max(ab.bottom, ab.top)
+    c_y0, c_y1 = min(cb[1], cb[3]), max(cb[1], cb[3])
+    assert cb[0] >= a_x0 and cb[2] <= a_x1 and c_y0 >= a_y0 and c_y1 <= a_y1, \
+        f'{spec["tile"]}: crop {cb} falls outside the AEF window {tuple(ab)}'
+    return cb, crs
+
+
 ###################################################################################################
 # Figure
 
@@ -261,12 +573,42 @@ def make_figure(out_path, dpi) :
     ncols = len(TILES)
     nrows = len(ROWS)
 
-    fig = plt.figure(figsize = (10, 13))
+    # Column windows are resolved up front because the grid geometry depends on them: a "crop" need
+    # not be square (59GPM is 41.0 x 28.7 km), and with equal-width cells a non-square panel gets
+    # letterboxed inside its cell -- the column visibly shrinks and its title floats away from it.
+    # Giving each column a width_ratio equal to its own aspect makes every panel the SAME HEIGHT
+    # with differing widths, so titles line up and no panel is padded. Ground scale still differs
+    # between columns, which is exactly what the per-column scale bar is there to state.
+    windows = [column_window(spec) for spec in TILES]
+    ratios = []
+    for (cb, _) in windows :
+        if cb is None :
+            ratios.append(1.0)
+        else :
+            w = abs(cb[2] - cb[0]) ; h = abs(cb[3] - cb[1])
+            ratios.append(w / h if h > 0 else 1.0)
+
+    all_ratios = ratios + [0.04 * sum(ratios) / max(1, ncols)]
+    wspace, hspace = 0.08, 0.12
+    left, right, top, bottom = 0.06, 0.93, 0.90, 0.05
+
+    # Derive the figure HEIGHT from the column aspects instead of hard-coding it. Panels are all
+    # the same height, so once the widths are fixed the height follows; hard-coding it left several
+    # inches of dead white space below the bottom row as soon as a column stopped being square.
+    # matplotlib measures wspace/hspace as a fraction of the AVERAGE cell size, hence the
+    # (1 + space * (n - 1) / n) terms.
+    fig_w = 10.0
+    n_cells = len(all_ratios)
+    axes_w = (fig_w * (right - left)) / (1 + wspace * (n_cells - 1) / n_cells)
+    panel_h = (axes_w * all_ratios[0] / sum(all_ratios)) / ratios[0]
+    fig_h = (panel_h * nrows * (1 + hspace * (nrows - 1) / nrows)) / (top - bottom)
+
+    fig = plt.figure(figsize = (fig_w, fig_h))
     gs = gridspec.GridSpec(
         nrows, ncols + 1,
-        width_ratios = [1] * ncols + [0.04],
-        wspace = 0.08, hspace = 0.12,
-        left = 0.06, right = 0.93, top = 0.90, bottom = 0.05,
+        width_ratios = all_ratios,
+        wspace = wspace, hspace = hspace,
+        left = left, right = right, top = top, bottom = bottom,
     )
 
     missing = []
@@ -278,34 +620,51 @@ def make_figure(out_path, dpi) :
         aef_path = join(PRED_AEF, f"{tile}.tif")
         agbd_path = find_agbd(tile)
 
-        col_bounds, col_crs = None, None
-        if exists(aef_path) :
-            with rs.open(aef_path) as s :
-                col_bounds, col_crs = tuple(s.bounds), s.crs
+        # The column window, already resolved (and bounds-checked) above for the grid geometry.
+        col_bounds, col_crs = windows[c]
 
         for r, row in enumerate(ROWS) :
             ax = fig.add_subplot(gs[r, c])
             ax.set_xticks([]) ; ax.set_yticks([])
 
-            # Only the AGBD tile needs cropping: the AEF panel defines the window, and the CCI crop
-            # was already reprojected onto that same grid.
-            if row["key"] == "aef" :
-                path, bounds, crs = aef_path, None, None
+            # Every row is cropped to the SAME column window. Previously only the AGBD row was,
+            # because the window was by definition the whole AEF panel; now that "crop" can shrink
+            # it, the AEF and CCI rows must follow or a column would stop being like-for-like.
+            # The CCI crop already sits on the AEF grid, so the same bounds apply unchanged.
+            if row["key"] == "s2" :
+                path, bounds, crs = find_s2(agbd_path), col_bounds, col_crs
+            elif row["key"] == "aef" :
+                path, bounds, crs = aef_path, col_bounds, col_crs
             elif row["key"] == "cci" :
-                path, bounds, crs = join(PRED_CCI, f"{tile}_CCI.tif"), None, None
+                path, bounds, crs = join(PRED_CCI, f"{tile}_CCI.tif"), col_bounds, col_crs
+            elif row["key"] == "ssl4eo" :
+                path, bounds, crs = join(PRED_SSL4EO, f"{tile}.tif"), col_bounds, col_crs
             else :
                 path, bounds, crs = agbd_path, col_bounds, col_crs
 
-            if path is None or not exists(path) or (row["key"] == "agbd" and col_bounds is None) :
+            # find_s2 returns a LIST of band paths, so exists() cannot be applied to it directly.
+            # ssl4eo joins agbd/s2 in the col_bounds guard: it too must be cropped to the column
+            # window (two tiles carry a "crop"), so a None window means the column cannot be drawn.
+            gone = (path is None
+                    or (row["key"] != "s2" and not exists(path))
+                    or (row["key"] in ("agbd", "s2", "ssl4eo") and col_bounds is None))
+            if gone :
                 missing.append(f'{row["label"]} / {tile}')
                 ax.text(0.5, 0.5, f'[{row["label"]}\n{tile}]\nnot found', ha = "center",
                         va = "center", fontsize = 9, color = "0.5", transform = ax.transAxes)
                 ax.set_facecolor("0.95")
+            elif row["key"] == "s2" :
+                # True colour is NOT water-masked, unlike the AGB rows. The mask exists there
+                # because an AGB estimate over water is meaningless; a photograph of water is not.
+                # Greying the harbours here would delete the very context this row was added for.
+                data, p_bounds, p_crs = read_rgb(path, bounds, crs)
+                ax.imshow(data, interpolation = "nearest")
+                if r == nrows - 1 : add_scalebar(ax, p_bounds, data.shape[:2])
             else :
                 data, p_bounds, p_crs = read_panel(path, bounds = bounds, crs = crs)
 
-                # Same WorldCover water mask on every row of the column. Built per panel from that
-                # panel's own bounds/shape rather than shared, because the three rasters differ by
+                # Same WorldCover water mask on every AGB row of the column. Built per panel from
+                # that panel's own bounds/shape rather than shared, because the rasters differ by
                 # a pixel or two after downsampling and a shared mask would be off-by-one.
                 wm = water_mask(tile, p_bounds, p_crs, data.shape)
                 if wm is not None : data = np.where(wm, np.nan, data)
@@ -314,19 +673,29 @@ def make_figure(out_path, dpi) :
                 cmap.set_bad(MASK_COLOR)
                 ax.imshow(data, cmap = cmap, vmin = VMIN, vmax = VMAX, interpolation = "nearest")
 
-                # One bar per column, on the bottom row: all three rows of a column are cropped to
-                # the same AEF window on identical ground, so a per-panel bar would repeat the same
-                # number six times. Move this to every panel if a single row is ever shown alone.
+                # Per-panel GEDI RMSE, bottom-left. This is where the old two-model header line went:
+                # with four maps a header can't hold them all legibly, and a number belongs on the
+                # panel it describes anyway.
+                rmse_label(ax, spec, row["key"])
+
+                # One bar per column, on the bottom row: every row of a column is cropped to the
+                # same window on identical ground, so a per-panel bar would repeat the same number
+                # once per row. Move this to every panel if a single row is ever shown alone.
                 if r == nrows - 1 : add_scalebar(ax, p_bounds, data.shape)
 
             if r == 0 :
-                ax.set_title(f'{spec["region"]}  ({tile})\n$\\Delta$RMSE {spec["drmse"]:.2f} t/ha',
+                # Column header is just region (tile) now -- per-model GEDI RMSE moved onto each
+                # panel (rmse_label), so the old two-line header with its GEDI subtitle is gone and
+                # the title pad shrinks back to a normal gap.
+                ax.set_title(f'{spec["region"]}  ({tile})',
                              fontsize = 11, fontweight = "bold", pad = 8)
             if c == 0 :
                 ax.set_ylabel(row["label"], fontsize = 12, fontweight = "bold", labelpad = 10)
 
-    # Shared colorbar
-    cbar_ax = fig.add_subplot(gs[:, ncols])
+    # Shared colorbar, spanning ONLY the rows it actually describes. The Sentinel-2 row is a true
+    # colour composite on no such scale, so running the bar past it would imply t/ha applies there.
+    agb_rows = [i for i, row in enumerate(ROWS) if row["key"] != "s2"]
+    cbar_ax = fig.add_subplot(gs[min(agb_rows) : max(agb_rows) + 1, ncols])
     sm = ScalarMappable(cmap = CMAP, norm = Normalize(vmin = VMIN, vmax = VMAX))
     sm.set_array([])
     cbar = fig.colorbar(sm, cax = cbar_ax)
@@ -349,5 +718,15 @@ if __name__ == "__main__" :
     parser.add_argument("--out", type = str,
                         default = join(dirname(abspath(__file__)), "plots", "map_AEF_vs_AGBD-features"))
     parser.add_argument("--dpi", type = int, default = 300)
+    parser.add_argument("--render-px", type = int, default = None,
+                        help = "Downsample panels to about this many px per side. PREVIEW ONLY -- "
+                               "it decimates with nearest neighbour and can alias out fine-scale "
+                               "striping. Omit for native 10 m resolution, which is the default.")
     args = parser.parse_args()
+
+    if args.render_px is not None :
+        RENDER_PX = args.render_px
+        print(f"WARNING: rendering at ~{RENDER_PX} px/panel (preview). "
+              f"Published output should omit --render-px so panels stay at native 10 m.")
+
     make_figure(args.out, args.dpi)

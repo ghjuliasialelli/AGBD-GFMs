@@ -4,6 +4,7 @@ HANDOFF.md
 MISSING_FILES.md
 AEF_COVERAGE_TODO.md
 MAP_FIGURE_TODO.md
+SSL4EO_MAPS_TODO.md
 
 # python
 __pycache__/
@@ -31,9 +32,18 @@ data/weights/
 data/eval_plots/
 
 # Cached raw activations for the feature-visualisation figure, written by
-# model/extract_features.py. Regenerable, and a single *_feat.npy is ~105 MB (320x320x256
-# float32), i.e. over GitHub's 100 MB per-file limit. Keeping them on disk is what makes
-# re-zooming/re-colouring make_feature_figure.py instant instead of a ~15 min model re-run,
-# so delete them only if you are willing to pay that again. The small per-crop metadata
-# (*_geo.json, *_meta.json) and the s2rgb/pred GeoTIFFs next to them ARE tracked.
-comparison/maps/features/*.npy
+# model/extract_features.py (AEF/AGBD, ~100 MB each) and model/extract_features_ssl4eo.py
+# (SSL4EO, 256-d, ~200 MB each) -- both over GitHub's 100 MB per-file limit. Regenerable; kept on
+# disk so re-zooming/re-colouring make_feature_figure.py is instant instead of a ~15 min model
+# re-run, so delete them only if you are willing to pay that again. The '**' makes this catch the
+# archive_*/ subdir too -- the old non-recursive glob missed it, which is how three archived
+# *_feat.npy ended up tracked AND over the limit (see DATA_MANIFEST.md section E for the
+# `git rm --cached` needed to drop them; .gitignore alone will not untrack an already-committed
+# file). The small per-crop *_geo.json / *_meta.json / *_valid.npy and the s2rgb/pred GeoTIFFs
+# next to them ARE tracked.
+comparison/maps/features/**/*.npy
+
+# Bulk Sentinel-2 true-colour tiles for the AGBRef comparison maps (comparison/agbref/make_plot_maps.py
+# reads them from here) -- 7 JP2s, ~130 MB each, over the 100 MB limit. Provenance in
+# DATA_MANIFEST.md section E.
+comparison/agbref/data/s2_tci/

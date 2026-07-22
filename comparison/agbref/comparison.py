@@ -91,6 +91,8 @@ from pathlib import Path
 import warnings
 import tempfile
 import pickle
+import csv
+import os
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -591,6 +593,11 @@ print("\nApplying filters...")
 results = apply_filters(results)
 
 # === Summary stats ===
+# Every print_stats call also appends its numbers here, so the CSV written below is guaranteed to be
+# the exact same computation as the printed table (and as the figure text boxes) -- no re-derivation
+# that could silently drift from what is plotted.
+METRIC_ROWS = []
+
 def print_stats(name, pred, truth):
     valid = ~np.isnan(pred) & ~np.isnan(truth)
     p, t = pred[valid], truth[valid]
@@ -605,6 +612,8 @@ def print_stats(name, pred, truth):
     ss_tot = np.sum((t - np.mean(t)) ** 2)
     r2 = 1 - ss_res / ss_tot
     print(f"  {name}: n={len(p)}, bias={bias:.2f}, RMSE={rmse:.2f}, MAE={mae:.2f}, r={corr:.3f}, R²={r2:.3f}")
+    METRIC_ROWS.append({"metric": name.strip(), "n": int(len(p)), "bias": float(bias),
+                        "rmse": float(rmse), "mae": float(mae), "r": float(corr), "r2": float(r2)})
 
 # === Coverage report ===
 # This is the check that the original truncation escaped: without it, a mean over a fraction of
@@ -647,8 +656,42 @@ if "p90" in METHODS:
     print_stats("cci_p90    ", results["cci_p90"], results["agbref"])
 
 
+# === Write machine-readable outputs ===
+# Two CSVs, named with the same OUTPUT_SUFFIX as the figure so a metrics file is unambiguously
+# paired with the plot it summarises:
+#   metrics_<suffix>.csv  -- one row per (source, method): n, bias, RMSE, MAE, r, R^2 (the figure boxes)
+#   perplot_<suffix>.csv  -- one row per retained plot: the raw GT and per-source values behind them
+_INT_COLS = {"avg_year"}
+METRICS_CSV = CACHE_PATH.parent / f"metrics_{OUTPUT_SUFFIX}.csv"
+with open(METRICS_CSV, "w", newline="") as f:
+    w = csv.DictWriter(f, fieldnames=["metric", "n", "bias", "rmse", "mae", "r", "r2"])
+    w.writeheader()
+    for row in METRIC_ROWS:
+        w.writerow({k: (f"{v:.4f}" if isinstance(v, float) else v) for k, v in row.items()})
+print(f"\nMetrics written to {METRICS_CSV} ({len(METRIC_ROWS)} rows)")
 
-if PLOT:
+PERPLOT_CSV = CACHE_PATH.parent / f"perplot_{OUTPUT_SUFFIX}.csv"
+perplot_cols = [c for c in
+                ["point_x", "point_y", "avg_year", "agbref",
+                 "nico_mean", "nico_median", "nico_p90",
+                 "cci_mean", "cci_median", "cci_p90",
+                 "nico_cov", "cci_cov", "common_cov",
+                 "nico_mean_common", "cci_mean_common"]
+                if c in results]
+with open(PERPLOT_CSV, "w", newline="") as f:
+    w = csv.writer(f)
+    w.writerow(perplot_cols)
+    arrs = [results[c] for c in perplot_cols]
+    for r in range(len(results["agbref"])):
+        w.writerow([
+            "" if not np.isfinite(a[r]) else (int(a[r]) if c in _INT_COLS else f"{a[r]:.4f}")
+            for c, a in zip(perplot_cols, arrs)
+        ])
+print(f"Per-plot values written to {PERPLOT_CSV} ({len(results['agbref'])} rows)")
+
+
+# AGBREF_NO_PLOT=1 skips the (heavy, dpi=1200) figure render -- used when only the CSVs are wanted.
+if PLOT and os.environ.get("AGBREF_NO_PLOT") != "1":
 
     COLORS = {
         "nico": "#0084FF",  # blue

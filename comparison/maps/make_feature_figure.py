@@ -49,17 +49,35 @@ from matplotlib import gridspec
 
 # Same locations (and disclosure caveats) as the quantitative map figure; see make_map_figure.py.
 # `offset` is the top-left of the zoom window inside the extracted crop, in px; None = centred.
+# Europe was 32TNS until 2026-07-21. It was swapped for 32TPT to match make_map_figure.py, which
+# dropped 32TNS because its AEF window contains ZERO GEDI footprints in any year (the window is
+# Graubuenden/Valtellina, not Austria despite the label) and so could never carry an honest metric.
+# The two figures must show the same three regions or a reader will reasonably assume they do.
+#
+# Region labels are copied from make_map_figure.py verbatim. 49SBT was "South Asia" here and "Asia"
+# there; it is Qinling, Shaanxi, CHINA -- East Asia, not South Asia -- so the vaguer shared label is
+# the correct one to keep, and the mismatch between the two figures is now gone.
 TILES = [
     {"tile": "59GPM", "region": "Australasia", "offset": None},
-    {"tile": "32TNS", "region": "Europe",      "offset": None},
-    {"tile": "49SBT", "region": "South Asia",  "offset": None},
+    {"tile": "32TPT", "region": "Europe",      "offset": None},
+    {"tile": "49SBT", "region": "Asia",        "offset": None},
 ]
 
 COLS = [
-    {"key": "s2",   "label": "Sentinel-2 (true colour)"},
-    {"key": "agbd", "label": "AGBD features\nactivations (PCA $\\rightarrow$ RGB)"},
-    {"key": "aef",  "label": "AEF\nactivations (PCA $\\rightarrow$ RGB)"},
+    {"key": "s2",     "label": "Sentinel-2 (true colour)"},
+    {"key": "agbd",   "label": "AGBD features\nactivations (PCA $\\rightarrow$ RGB)"},
+    {"key": "aef",    "label": "AEF\nactivations (PCA $\\rightarrow$ RGB)"},
+    {"key": "ssl4eo", "label": "SSL4EO-MoCo\nactivations (PCA $\\rightarrow$ RGB)"},
 ]
+
+# The SSL4EO-MoCo column is a different beast from the two nico_film ones and the figure must not
+# pretend otherwise (see model/extract_features_ssl4eo.py). It is a different architecture (ViT +
+# RegUPerNet, not XceptionS2_FiLM), a different tap (the 512-D input to conv_reg, not the 256-D
+# pre-predictions map), S2-only input, and -- because that model predicts one centre pixel per
+# 25x25 patch -- its features are extracted on a 30 m grid and nearest-upsampled to the shared 10 m
+# crop, so its panel is legitimately blocky at 30 m. So this is a CROSS-ARCHITECTURE "what each
+# model learns" comparison, not the symmetric same-layer/only-the-input-differs comparison of the
+# AGBD/AEF pair. The caption must say which columns are commensurable.
 
 BG = 0.85          # grey for nodata pixels
 PCT = (2, 98)      # robust percentile stretch per PCA component

@@ -63,6 +63,11 @@ CCI_BLOCKS = {
     "32TNS" : "N50E000",
     "45RXL" : "N30E080",
     "49SBT" : "N40E100",
+    # 32TPT replaces 32TNS for the Europe column: 32TNS's 40 km AEF window contains ZERO GEDI
+    # footprints in any year (the window is Graubuenden/Valtellina, not Austria), so it can never
+    # carry an honest per-tile metric. 32TPT has 165,788 footprints in the same-sized window
+    # (measured, not assumed) and its AEF tiles exist in tile_to_aefiles.pkl.
+    "32TPT" : "N50E010",
 }
 
 NODATA = -9999.0

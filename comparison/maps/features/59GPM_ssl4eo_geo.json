@@ -1,0 +1,21 @@
+{
+  "transform": [
+    10.0,
+    0.0,
+    661340.0,
+    0.0,
+    -10.0,
+    5147150.0
+  ],
+  "crs": "EPSG:32759",
+  "height": 320,
+  "width": 320,
+  "native_res_m": 30,
+  "native_shape": [
+    107,
+    107
+  ],
+  "feat_dim": 512,
+  "tap": "conv_reg",
+  "run": "20260316_155017_36a16f_ssl4eo_moco_reg_upernet_agbd"
+}
