@@ -42,6 +42,7 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as pe
 from matplotlib import gridspec
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
@@ -60,6 +61,14 @@ HALF_DEG = 0.05
 CMAP = "viridis"
 BG = 0.85  # grey for nodata
 
+# Scale bar on the Sentinel-2 panel, same style/constants as make_map_figure.py so the two
+# qualitative figures read as one system. The cell is 0.1 deg on a side (~11 km at these
+# latitudes), so 0.25 of the panel snaps to the 2 km entry.
+SCALEBAR_FRAC = 0.25
+SCALEBAR_NICE_KM = (1, 2, 5, 10, 20)
+SCALEBAR_COLOR = "white"
+SCALEBAR_OUTLINE = "black"
+
 # Source colours: identical to comparison.py's scatter figure so the two figures read as one system.
 C_OURS = "#0084FF"   # AEF / nico_film
 C_CCI = "#C02BF2"    # ESA CCI
@@ -71,6 +80,23 @@ C_CCI = "#C02BF2"    # ESA CCI
 # Plot 292 (tile 12STG, GT 0 t/ha over arid ground) was dropped: an aggregated 0 t/ha reference is
 # the least reliable anchor of the set. Its TCI is still in data/s2_tci/ but no longer plotted.
 DEFAULT_PLOTS = [304, 293, 26, 290, 11]
+
+# Human-readable location for each plot, so the row label carries a geography a reader recognises
+# rather than an opaque plot index. Derived from each plot's POINT_X/POINT_Y (WGS84) in
+# AGBRef.geojson / the results cache, resolved to country (and state/region where it disambiguates):
+#   304  (-108.55, 37.95)  SW Colorado, USA       (semi-arid, GT 4 t/ha)
+#   293  (-108.55, 37.75)  SW Colorado, USA       (semi-arid, GT 25 t/ha)
+#    26  ( 11.55,   4.15)  Cameroon               (tropical forest, GT 88 t/ha)
+#   290  (-80.45,  37.45)  Virginia, USA          (Appalachian forest, GT 164 t/ha)
+#    11  ( 12.85,   3.15)  Cameroon               (dense tropical forest, GT 281 t/ha)
+# Keyed by plot index; falls back to "plot {i}" for any plot not listed.
+PLOT_REGION = {
+    304: "SW Colorado, USA",
+    293: "SW Colorado, USA",
+    26:  "Cameroon",
+    290: "Virginia, USA",
+    11:  "Cameroon",
+}
 
 
 # ============================ helpers copied from comparison.py ============================
@@ -209,6 +235,49 @@ def draw_map(ax, arr, vmax, title):
     return im
 
 
+def value_label(ax, text):
+    """Annotate a panel bottom-left, in the same white-on-dark style as the per-panel RMSE labels
+    of make_map_figure.py -- so the number sits on the map it describes rather than in the title.
+
+    Every annotated number in this figure is a biomass in t/ha averaged over the plot cell (the
+    map panels' cell mean, the S2 panel's AGBRef reference), so the word "mean" is left to the
+    caption rather than repeated on all three panels of every row.
+    """
+    ax.text(0.04, 0.05, text, transform=ax.transAxes, ha="left", va="bottom",
+            fontsize=8.5, color="white", fontweight="bold",
+            bbox=dict(boxstyle="round,pad=0.25", fc="black", ec="none", alpha=0.55))
+
+
+def add_scalebar(ax, shape, res_m=GRID_RES_M):
+    """
+    Draw a scale bar top-right, sized from the panel's own ground extent.
+
+    Top-right rather than bottom-right (as in make_map_figure.py) because the bottom-left of this
+    panel already carries the AGBRef badge, and the cell is portrait-shaped at mid latitudes -- the
+    two collide along the bottom edge.
+
+    The panel is an imshow of the plot's canonical UTM cell grid with no `extent`, so axes
+    coordinates are pixel indices and the grid resolution (`res_m`) is exact by construction --
+    it is the grid this figure builds, not an assumed resolution of some source raster.
+    """
+    h, w = shape[:2]
+    if w <= 0 or h <= 0:
+        return
+    width_km = w * res_m / 1000
+    length_km = min(SCALEBAR_NICE_KM, key=lambda k: abs(k - SCALEBAR_FRAC * width_km))
+    bar_px = length_km * 1000 / res_m
+
+    margin = 0.05 * w
+    x1 = w - margin
+    x0 = x1 - bar_px
+    y = 0.09 * h
+    stroke = [pe.withStroke(linewidth=3, foreground=SCALEBAR_OUTLINE)]
+    ax.plot([x0, x1], [y, y], color=SCALEBAR_COLOR, lw=2, solid_capstyle="butt",
+            path_effects=stroke, clip_on=False)
+    ax.text((x0 + x1) / 2, y - 0.025 * h, f"{length_km} km", color=SCALEBAR_COLOR,
+            fontsize=9, fontweight="bold", ha="center", va="bottom", path_effects=stroke)
+
+
 def draw_distribution(ax, nico, cci, gt, gt_std, xmax, first_row, last_row):
     """
     Distribution panel: normalised histograms of the two sources' valid pixels, against the GT
@@ -240,21 +309,22 @@ def draw_distribution(ax, nico, cci, gt, gt_std, xmax, first_row, last_row):
         ax.set_xlabel("AGB (t/ha)", fontsize=9)
     if first_row:
         ax.set_title("Pixel distribution vs GT", fontsize=10)
-        ax.legend(fontsize=7, loc="upper right", framealpha=0.85, handlelength=1.2)
+        ax.legend(fontsize=9.5, loc="upper right", framealpha=0.85, handlelength=1.6)
 
 
-def draw_s2(ax, rgb, valid, title, sub):
-    """Show a TCI crop as-is (no stretch); nodata pixels drawn as neutral grey."""
+def draw_s2(ax, rgb, valid, title):
+    """Show a TCI crop as-is (no stretch); nodata pixels drawn as neutral grey, plus a scale bar.
+
+    The tile name now lives in the row label, and the acquisition date is not printed at all (the
+    other qualitative figures do not print it either).
+    """
     disp = rgb.copy()
     disp[~valid] = int(BG * 255)
     ax.imshow(disp, interpolation="nearest")
     ax.set_xticks([]); ax.set_yticks([])
+    add_scalebar(ax, disp.shape)
     if title:
         ax.set_title(title, fontsize=10)
-    if sub:
-        ax.text(0.5, 0.02, sub, transform=ax.transAxes, ha="center", va="bottom",
-                fontsize=6.5, color="w",
-                bbox=dict(boxstyle="round,pad=0.15", fc="0.1", ec="none", alpha=0.55))
 
 
 def main(plots, out_path, dpi):
@@ -299,26 +369,35 @@ def main(plots, out_path, dpi):
 
         # --- Sentinel-2 context (leftmost) ---
         axs = fig.add_subplot(gs[r, 0])
+        tile = "?"
         picked = pick_s2(tiles_of_plot.get(i, []), px[i], py[i])
         if picked is not None:
             path, date, _ = picked
+            tile = _tile_of(path)
             rgb, valid = load_s2(path, px[i], py[i])
-            draw_s2(axs, rgb, valid, ("Sentinel-2 (TCI)" if r == 0 else ""),
-                    f"{_tile_of(path)}  {date}")
+            draw_s2(axs, rgb, valid, ("Sentinel-2 (TCI)" if r == 0 else ""))
         else:
             axs.text(0.5, 0.5, "S2 not found", ha="center", va="center",
                      fontsize=9, color="0.4", transform=axs.transAxes)
             axs.set_facecolor("0.95"); axs.set_xticks([]); axs.set_yticks([])
             if r == 0:
                 axs.set_title("Sentinel-2 (TCI)", fontsize=10)
-        axs.set_ylabel(f"plot {i}\nGT {gt:.0f}±{gt_std:.0f} t/ha\n"
-                       f"(n={int(n_field[i])}, {px[i]:.1f}, {py[i]:.1f})",
-                       fontsize=8.5, fontweight="bold", labelpad=6)
+        # Row label: recognisable geography, then the identifiers a reader may want to look up --
+        # the MGRS tile the context image comes from and the AGBRef plot index.
+        region = PLOT_REGION.get(i, "unknown")
+        axs.set_ylabel(f"{region}\n({tile}) (plot {i})", fontsize=9, fontweight="bold", labelpad=6)
+        # The AGBRef reference sits on the S2 panel in the same badge style as the two map means,
+        # so all three numbers of a row are read the same way: a cell-mean biomass in t/ha.
+        value_label(axs, f"{gt:.0f}±{gt_std:.0f} t/ha (n={int(n_field[i])})")
 
+        # Each map's cell mean is annotated ON the panel (bottom-left) rather than in its title,
+        # matching the per-panel RMSE labels of the prediction-map figure.
         ax0 = fig.add_subplot(gs[r, 1])
-        draw_map(ax0, nico, vmax, (("Ours (AEF)\n" if r == 0 else "") + f"mean {n_mean:.0f} t/ha"))
+        draw_map(ax0, nico, vmax, ("Ours (AEF)" if r == 0 else ""))
+        value_label(ax0, f"{n_mean:.0f} t/ha")
         ax1 = fig.add_subplot(gs[r, 2])
-        draw_map(ax1, cci, vmax, (("ESA CCI\n" if r == 0 else "") + f"mean {c_mean:.0f} t/ha"))
+        draw_map(ax1, cci, vmax, ("ESA CCI" if r == 0 else ""))
+        value_label(ax1, f"{c_mean:.0f} t/ha")
 
         # Shared colourbar for the two maps, with the GT drawn on it as the reference.
         cax = fig.add_subplot(gs[r, 3])

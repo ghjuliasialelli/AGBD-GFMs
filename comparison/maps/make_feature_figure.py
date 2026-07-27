@@ -43,6 +43,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
+import matplotlib.patheffects as pe
 
 ###################################################################################################
 # Configuration
@@ -63,11 +64,15 @@ TILES = [
     {"tile": "49SBT", "region": "Asia",        "offset": None},
 ]
 
+# Column labels. The "(PCA -> RGB)" qualifier was dropped from the three activation columns: it was
+# repeated verbatim in every one, and the caption already states that each activation panel is the
+# 256-D penultimate map reduced to 3 PCA components shown as RGB. "AGBD features" -> "AGBD" for the
+# same brevity (the row is the AGBD-features model's activations either way).
 COLS = [
     {"key": "s2",     "label": "Sentinel-2 (true colour)"},
-    {"key": "agbd",   "label": "AGBD features\nactivations (PCA $\\rightarrow$ RGB)"},
-    {"key": "aef",    "label": "AEF\nactivations (PCA $\\rightarrow$ RGB)"},
-    {"key": "ssl4eo", "label": "SSL4EO-MoCo\nactivations (PCA $\\rightarrow$ RGB)"},
+    {"key": "agbd",   "label": "AGBD\nactivations"},
+    {"key": "aef",    "label": "AEF\nactivations"},
+    {"key": "ssl4eo", "label": "SSL4EO-MoCo\nactivations"},
 ]
 
 # The SSL4EO-MoCo column is a different beast from the two nico_film ones and the figure must not
@@ -82,8 +87,48 @@ COLS = [
 BG = 0.85          # grey for nodata pixels
 PCT = (2, 98)      # robust percentile stretch per PCA component
 
+# Scale bar for the zoom window. The zoom is a fixed ~1.3 km square, but printing "1.3 km" as text
+# on every row (as before) is both cluttered and less useful than a bar a reader can lay against the
+# structure. All panels of a row share the same ground extent (z px at 10 m), so one bar on the
+# Sentinel-2 panel states the scale for the whole row.
+SB_FRAC = 0.30                       # target bar length as a fraction of the panel width
+SB_NICE_M = (100, 200, 250, 500, 1000)  # snap to a round length
+SB_COLOR = "white"                   # outlined in black so it reads over S2 and PCA colours alike
+SB_OUTLINE = "black"
+
 ###################################################################################################
 # Helpers
+
+def add_scalebar(ax, width_px, res_m = 10) :
+    """
+    Draw a scale bar in the bottom-right of a feature panel, sized from the panel's ground width.
+
+    Panels are drawn with imshow and no extent, so axes coordinates are pixel indices; the bar
+    length in pixels is (length_m / res_m). White with a black outline so it stays legible over both
+    the Sentinel-2 crop and the PCA-RGB activations.
+
+    Args:
+    - ax: the panel's axes.
+    - width_px (int): panel width in pixels (the zoom size z; panels are square).
+    - res_m (int): ground resolution of a pixel, in metres (10 m for the shared crop grid).
+    """
+    width_m = width_px * res_m
+    target_m = SB_FRAC * width_m
+    length_m = min(SB_NICE_M, key = lambda k : abs(k - target_m))
+    bar_px = length_m / res_m
+
+    margin = 0.05 * width_px
+    x1 = width_px - margin
+    x0 = x1 - bar_px
+    y = width_px - margin
+
+    stroke = [pe.withStroke(linewidth = 3, foreground = SB_OUTLINE)]
+    ax.plot([x0, x1], [y, y], color = SB_COLOR, lw = 2, solid_capstyle = "butt",
+            path_effects = stroke, clip_on = False)
+    label = f"{length_m / 1000:.1f} km" if length_m >= 1000 else f"{length_m} m"
+    ax.text((x0 + x1) / 2, y - 0.03 * width_px, label, color = SB_COLOR,
+            fontsize = 9, fontweight = "bold", ha = "center", va = "bottom",
+            path_effects = stroke)
 
 def pca_rgb(feats, valid) :
     """
@@ -185,7 +230,11 @@ def make_figure(features, out_path, zoom_px, dpi) :
             if col["key"] == "s2" :
                 path = join(features, f"{tile}_s2rgb.tif")
                 ok = exists(path)
-                if ok : ax.imshow(load_s2(path, zr, zc, z), interpolation = "nearest")
+                if ok :
+                    ax.imshow(load_s2(path, zr, zc, z), interpolation = "nearest")
+                    # One scale bar per row, on the Sentinel-2 panel: every column shares this row's
+                    # ground extent (z px at 10 m), so it states the scale for the whole row.
+                    add_scalebar(ax, z)
             else :
                 fp = join(features, f"{tile}_{col['key']}_feat.npy")
                 vp = join(features, f"{tile}_{col['key']}_valid.npy")
@@ -206,7 +255,9 @@ def make_figure(features, out_path, zoom_px, dpi) :
             if r_i == 0 :
                 ax.set_title(col["label"], fontsize = 11, fontweight = "bold", pad = 8)
             if c_i == 0 :
-                ax.set_ylabel(f'{spec["region"]}\n({tile})  {z * 10 / 1000:.1f} km',
+                # Region and tile on ONE line now (was two), and the window size is shown by the
+                # scale bar on the S2 panel rather than spelled out as "1.3 km" text here.
+                ax.set_ylabel(f'{spec["region"]} ({tile})',
                               fontsize = 11, fontweight = "bold", labelpad = 8)
 
     makedirs(dirname(abspath(out_path)), exist_ok = True)

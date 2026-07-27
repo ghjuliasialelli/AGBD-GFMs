@@ -188,7 +188,7 @@ ROWS = [
     {"key": "s2",     "label": "Sentinel-2 RGB"},
     {"key": "aef",    "label": "AEF"},
     {"key": "agbd",   "label": "AGBD features"},
-    {"key": "ssl4eo", "label": "SSL4EO-MoCo\n(30 m)"},
+    {"key": "ssl4eo", "label": "SSL4EO-MoCo (30 m)"},
     {"key": "cci",    "label": "ESA CCI v6.0"},
 ]
 
@@ -481,7 +481,7 @@ def rmse_label(ax, spec, row_key) :
     """
     r = spec.get("rmse", {}).get(row_key)
     if r is None : return
-    ax.text(0.035, 0.04, f"RMSE {r:.0f}", transform = ax.transAxes,
+    ax.text(0.035, 0.04, f"RMSE {r:.0f} t/ha", transform = ax.transAxes,
             ha = "left", va = "bottom", fontsize = 8.5, color = "white", fontweight = "bold",
             bbox = dict(boxstyle = "round,pad=0.25", fc = "black", ec = "none", alpha = 0.55))
 
@@ -659,7 +659,12 @@ def make_figure(out_path, dpi) :
                 # Greying the harbours here would delete the very context this row was added for.
                 data, p_bounds, p_crs = read_rgb(path, bounds, crs)
                 ax.imshow(data, interpolation = "nearest")
-                if r == nrows - 1 : add_scalebar(ax, p_bounds, data.shape[:2])
+                # Scale bar lives on the Sentinel-2 row (the top row): the AEF window makes each
+                # column ~40 km across, not the ~110 km tile it is named after, and the S2 panel is
+                # the natural place to carry that cue. Every row of a column is cropped to the same
+                # window on identical ground, so one bar per column (here) suffices; the white bar
+                # is outlined in black in add_scalebar so it stays legible over the imagery too.
+                add_scalebar(ax, p_bounds, data.shape[:2])
             else :
                 data, p_bounds, p_crs = read_panel(path, bounds = bounds, crs = crs)
 
@@ -677,11 +682,6 @@ def make_figure(out_path, dpi) :
                 # with four maps a header can't hold them all legibly, and a number belongs on the
                 # panel it describes anyway.
                 rmse_label(ax, spec, row["key"])
-
-                # One bar per column, on the bottom row: every row of a column is cropped to the
-                # same window on identical ground, so a per-panel bar would repeat the same number
-                # once per row. Move this to every panel if a single row is ever shown alone.
-                if r == nrows - 1 : add_scalebar(ax, p_bounds, data.shape)
 
             if r == 0 :
                 # Column header is just region (tile) now -- per-model GEDI RMSE moved onto each

@@ -1,0 +1,71 @@
+[project]
+name = "agbd-gfms"
+version = "0.1.0"
+description = "Above-ground biomass density estimation with geospatial foundation models"
+readme = "README.md"
+requires-python = "==3.10.*"
+
+dependencies = [
+    # deep learning
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "lightning",
+    "torchmetrics",
+    # geospatial
+    "geopandas",
+    "rasterio",
+    "pyproj",
+    "shapely",
+    # data / modelling
+    "h5py",
+    "lightgbm",
+    "pandas",
+    "numpy",
+    "scipy",
+    "scikit-learn",
+    "scikit-image",
+    # plotting
+    "matplotlib",
+    # config
+    "hydra-core",
+    "omegaconf",
+    # io / services
+    "datasets",
+    "huggingface-hub",
+    "wandb",
+    "aiohttp",
+    "requests",
+    "boto3",
+    "botocore",
+    "tqdm",
+    # dev convenience
+    "ipykernel",
+    "ipdb",
+]
+
+[project.optional-dependencies]
+# Extras that need system libraries or are only used by a few scripts.
+# Install with:  uv sync --extra extras
+# NOTE: geotessera is deliberately absent -- it requires Python >= 3.11 and so
+# cannot coexist with this project's 3.10 pin. Install it in a separate env.
+extras = [
+    "pycurl",  # needs libcurl + openssl headers
+    "pyreadr", # reading R .rds reference data
+]
+
+[tool.uv]
+# CUDA 11.8 wheels, matching environment.yml (cudatoolkit=11.8)
+[[tool.uv.index]]
+name = "pytorch-cu118"
+url = "https://download.pytorch.org/whl/cu118"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu118" }
+torchvision = { index = "pytorch-cu118" }
+torchaudio = { index = "pytorch-cu118" }
+
+[tool.setuptools]
+# The repo is a collection of scripts, not an installable package.
+py-modules = []

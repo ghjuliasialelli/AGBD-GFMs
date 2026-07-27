@@ -67,3 +67,6 @@ comparison/maps/features/archive_20260720_prefix_encode_tile/
 # plots already tracked under comparison/*/plots/ (34 MB of duplication that
 # would re-duplicate on every figure regen).
 manuscript/
+
+# uv virtual environment (uv.lock IS committed)
+.venv/
