@@ -47,3 +47,23 @@ comparison/maps/features/**/*.npy
 # reads them from here) -- 7 JP2s, ~130 MB each, over the 100 MB limit. Provenance in
 # DATA_MANIFEST.md section E.
 comparison/agbref/data/s2_tci/
+
+# ---------------------------------------------------------------------------
+# Local-only working directories, 2026-07-27. All of these still exist on disk
+# in the working copy; they are simply not part of the published repo.
+# Rationale and inventory are in DATA_MANIFEST.md (also local-only).
+# ---------------------------------------------------------------------------
+
+# Intermediate diagnostic plots from figure development. Working artifacts, not
+# results; the conclusions they informed live in make_map_figure.py's headers.
+comparison/maps/plots/diagnostics_20260721/
+
+# Superseded intermediate outputs, kept locally for reference only.
+comparison/maps/plots/archive_20260720_prefix_encode_tile/
+comparison/maps/features/archive_20260720_prefix_encode_tile/
+
+# LaTeX source + figures for the paper. Lives here for convenience but is
+# authored in Overleaf, and 4 of its imgs/*.png were byte-identical copies of
+# plots already tracked under comparison/*/plots/ (34 MB of duplication that
+# would re-duplicate on every figure regen).
+manuscript/
