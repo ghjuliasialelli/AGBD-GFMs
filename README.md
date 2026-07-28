@@ -1,7 +1,13 @@
-# AGBD-GFMs
+![image info](header.png)
 
-Unified codebase for **"Above-ground Biomass Estimation with Geospatial Foundation Models"**
-(Sialelli, Scheibenreif, Wegner, Schindler).
+[![CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/) [![project website](https://img.shields.io/badge/Project%20Website-6cc967 )](https://agbd-gfm.github.io/)
+
+This repository contains the code used to create the results presented in the paper "Above-ground Biomass Estimation with Geospatial Foundation Models" (currently under-review).
+
+:email: For all correspondence, contact [Ghjulia Sialelli](mailto:gsialelli@ethz.ch). 
+
+
+
 
 ## Quick start
 
