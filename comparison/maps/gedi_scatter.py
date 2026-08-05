@@ -63,7 +63,21 @@ def sample1(path, xy) :
 
 
 def paired_samples(tile) :
-    """Return (ref, {model_key: pred}) over the AEF-bounds, water-masked, all-four-valid cells."""
+    """Return (cx, cy, ref, {model_key: pred}) over the display-window, water-masked,
+    all-four-valid GEDI cells -- i.e. exactly the reference set every panel's RMSE is computed on.
+
+    The coordinates are returned as well as the values because make_map_figure.py draws these same
+    cells as its GEDI row: the map row and the numbers on the map MUST come from one selection, or
+    the figure would show a different footprint set than it scores.
+
+    Args:
+    - tile (str): MGRS tile name.
+
+    Returns:
+    - np.ndarray, np.ndarray: cell-centre x, y in the tile's UTM CRS.
+    - np.ndarray: the GEDI L4A reference value per cell (t/ha).
+    - dict: model key -> that model's prediction at the same cells.
+    """
     b = json.load(open(f"{GEDI_DIR}/bboxes.json"))[tile]
     crs = b["crs"]
     win = CROP[tile] if CROP[tile] is not None else b["aef_utm"]   # display scope, matches the map
@@ -96,7 +110,7 @@ def paired_samples(tile) :
     ok = {k: (pred[k] != NODATA) & np.isfinite(pred[k]) for k in pred}
     keep = in_win & (~water) & np.isfinite(ref)
     for k in ok : keep &= ok[k]
-    return ref[keep], {k: pred[k][keep] for k in pred}
+    return cx[keep], cy[keep], ref[keep], {k: pred[k][keep] for k in pred}
 
 
 def main() :
@@ -114,7 +128,7 @@ def main() :
     for i, (mkey, mlabel) in enumerate(MODELS) :
         for j, (tile, region) in enumerate(TILE_ORDER) :
             ax = axes[i, j]
-            ref, preds = data[tile]
+            _, _, ref, preds = data[tile]
             y = preds[mkey]
 
             ax.plot([0, VMAX], [0, VMAX], color = "0.5", lw = 1, ls = "--", zorder = 1)

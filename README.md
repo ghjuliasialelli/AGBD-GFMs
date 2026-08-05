@@ -1,6 +1,6 @@
 ![image info](header.png)
 
-[![CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/) [![project website](https://img.shields.io/badge/Project%20Website-6cc967 )](https://agbd-gfm.github.io/)
+[![CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/) [![project website](https://img.shields.io/badge/Project%20Website-6cc967 )](https://agbd-gfm.github.io/) [![Preprint](https://img.shields.io/badge/Preprint-b31b1b.svg?style=flat-square)](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7213886)
 
 This repository contains the code used to create the results presented in the paper "Above-ground Biomass Estimation with Geospatial Foundation Models" (currently under-review).
 

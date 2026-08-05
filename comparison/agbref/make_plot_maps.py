@@ -59,7 +59,18 @@ CCI_DIR = Path("/scratch3/gsialelli/CCI")
 GRID_RES_M = 10
 HALF_DEG = 0.05
 CMAP = "viridis"
-BG = 0.85  # grey for nodata
+BG = 0.85  # grey for nodata (and for the padding around a plot smaller than the reference canvas)
+
+# Every plot's cell is 0.1 deg on a side, but that is a *latitude-dependent* number of metres in
+# longitude (0.1 deg lon = 11.13 km * cos(lat)), so the UTM grids differ in size: ~891x1115 px in
+# Virginia vs ~1115x1110 px in Cameroon. Drawn at equal aspect, the panels then have different
+# on-page sizes and the figure reads as a ragged grid. Instead every panel is padded (centred) onto
+# ONE reference canvas -- the per-axis maximum over the plots being drawn -- so all panels are the
+# same size at the same 10 m/px scale, and the padding is drawn in the same grey as nodata with the
+# plot's true extent outlined. Padding is display-only: every number in the figure (panel means,
+# distributions, colour scale) is computed on the unpadded cell.
+CELL_EDGE_COLOR = "black"
+CELL_EDGE_LW = 0.9
 
 # Scale bar on the Sentinel-2 panel, same style/constants as make_map_figure.py so the two
 # qualitative figures read as one system. The cell is 0.1 deg on a side (~11 km at these
@@ -125,6 +136,22 @@ def make_utm_grid(lon, lat, res_m=GRID_RES_M):
     return transform, width, height, utm_epsg
 
 
+def make_canvas_grid(lon, lat, canvas, res_m=GRID_RES_M):
+    """
+    The plot's canonical cell grid GROWN to the reference canvas, centred on the same ground.
+
+    Same CRS, same 10 m pixel edges, only more of them -- the cell grid's transform shifted by the
+    integer pad offset -- so a raster read on this grid is pixel-aligned with one read on the cell
+    grid, and `canvas_origin` locates the cell inside it exactly. Used for the Sentinel-2 context
+    panel, whose 110 km MGRS tile covers well beyond the 0.1 deg cell: there is no reason to grey
+    out ground we actually have imagery for. Returns (transform, width, height, utm_epsg).
+    """
+    transform, width, height, utm_epsg = make_utm_grid(lon, lat, res_m)
+    cw, ch = canvas
+    x0, y0 = canvas_origin((height, width), canvas)
+    return transform * rasterio.Affine.translation(-x0, -y0), cw, ch, utm_epsg
+
+
 def reproject_onto_grid(raster_path, nodata, transform, width, height, utm_epsg):
     """Reproject a raster's band 1 onto the fixed grid; invalid pixels become NaN."""
     dst = np.full((height, width), np.nan, dtype=np.float32)
@@ -161,15 +188,23 @@ def _date_of(fname):
         return "?"
 
 
-def load_s2(path, lon, lat):
+def load_s2(path, lon, lat, canvas=None):
     """
     Crop a TCI (3-band uint8, native tile UTM) onto the plot's 10 m cell grid.
 
     All six downloaded tiles are in the same UTM zone as their plot, so this is effectively a crop
     and 10 m re-grid (nearest, to keep the balanced TCI colours untouched). Returns (H, W, 3) uint8
     and a (H, W) bool validity mask (TCI encodes off-swath / fill as 0,0,0).
+
+    With `canvas`, reads the enlarged canvas grid instead, so the context panel shows real imagery
+    where the smaller plots would otherwise be padded. Any part of the canvas falling off the tile
+    stays 0,0,0 and so is masked invalid -- i.e. greyed exactly like padding, which is the honest
+    rendering when the tile genuinely does not cover it. The cloud-scoring pass in `pick_s2`
+    deliberately does NOT pass a canvas: which scene is least cloudy is a question about the plot
+    cell, not about the context margin.
     """
-    transform, width, height, utm_epsg = make_utm_grid(lon, lat)
+    transform, width, height, utm_epsg = (
+        make_canvas_grid(lon, lat, canvas) if canvas is not None else make_utm_grid(lon, lat))
     dst = np.zeros((3, height, width), dtype=np.uint8)
     with rasterio.open(path) as src:
         for b in range(3):
@@ -225,30 +260,82 @@ def load_plot(i, lon, lat, avg_year):
     return nico, cci
 
 
-def draw_map(ax, arr, vmax, title):
-    """Show a biomass array (NaN=nodata) with a shared 0..vmax viridis scale."""
+def reference_canvas(plots, px, py):
+    """
+    The common panel size, in pixels of the 10 m grid: the per-axis maximum over the plots drawn.
+
+    Per-axis rather than "the largest plot" as a single winner, because width and height need not
+    peak on the same plot (width is largest near the equator, height is largest away from it). The
+    result contains every plot's cell by construction, so no plot is ever cropped.
+    """
+    sizes = [make_utm_grid(px[i], py[i])[1:3] for i in plots]
+    return max(w for w, _ in sizes), max(h for _, h in sizes)
+
+
+def canvas_origin(shape, canvas):
+    """Top-left pixel of a (H, W)-shaped cell centred on the reference canvas."""
+    cw, ch = canvas
+    h, w = shape[:2]
+    return (cw - w) // 2, (ch - h) // 2
+
+
+def pad_to_canvas(arr, canvas, fill):
+    """
+    Centre `arr` (H, W[, C]) on the reference canvas, filling around it with `fill`.
+
+    Returns (padded, (x0, y0)) where (x0, y0) is the top-left of the real data in the padded array,
+    i.e. the origin of the rectangle marking the plot's true extent. Offsets are integer pixels, so
+    the padded image is still an exact 10 m grid -- no resampling is involved.
+    """
+    x0, y0 = canvas_origin(arr.shape, canvas)
+    cw, ch = canvas
+    h, w = arr.shape[:2]
+    out = np.full((ch, cw) + arr.shape[2:], fill, dtype=arr.dtype)
+    out[y0:y0 + h, x0:x0 + w] = arr
+    return out, (x0, y0)
+
+
+def mark_cell(ax, origin, shape):
+    """Outline the plot's actual 0.1 deg cell inside the padded panel."""
+    from matplotlib.patches import Rectangle
+    x0, y0 = origin
+    h, w = shape[:2]
+    ax.add_patch(Rectangle((x0 - 0.5, y0 - 0.5), w, h, fill=False,
+                           edgecolor=CELL_EDGE_COLOR, lw=CELL_EDGE_LW, zorder=6))
+
+
+def draw_map(ax, arr, vmax, title, canvas):
+    """Show a biomass array (NaN=nodata) with a shared 0..vmax viridis scale, padded to `canvas`."""
     cmap = plt.get_cmap(CMAP).copy()
     cmap.set_bad(color=str(BG))
-    im = ax.imshow(np.ma.masked_invalid(arr), cmap=cmap, vmin=0, vmax=vmax, interpolation="nearest")
+    padded, origin = pad_to_canvas(arr, canvas, np.nan)
+    im = ax.imshow(np.ma.masked_invalid(padded), cmap=cmap, vmin=0, vmax=vmax, interpolation="nearest")
+    mark_cell(ax, origin, arr.shape)
     ax.set_title(title, fontsize=10)
     ax.set_xticks([]); ax.set_yticks([])
     return im
 
 
-def value_label(ax, text):
+def value_label(ax, text, origin, shape):
     """Annotate a panel bottom-left, in the same white-on-dark style as the per-panel RMSE labels
     of make_map_figure.py -- so the number sits on the map it describes rather than in the title.
+
+    Placed in data (pixel) coordinates relative to the plot's real cell, NOT in axes fractions:
+    with a padded panel the axes' bottom-left corner is grey padding, where the badge would sit
+    off the imagery it annotates (and could be clipped by the panel edge).
 
     Every annotated number in this figure is a biomass in t/ha averaged over the plot cell (the
     map panels' cell mean, the S2 panel's AGBRef reference), so the word "mean" is left to the
     caption rather than repeated on all three panels of every row.
     """
-    ax.text(0.04, 0.05, text, transform=ax.transAxes, ha="left", va="bottom",
-            fontsize=8.5, color="white", fontweight="bold",
+    ox, oy = origin
+    h, w = shape[:2]
+    ax.text(ox + 0.04 * w, oy + 0.95 * h, text, ha="left", va="bottom",
+            fontsize=8.5, color="white", fontweight="bold", zorder=7,
             bbox=dict(boxstyle="round,pad=0.25", fc="black", ec="none", alpha=0.55))
 
 
-def add_scalebar(ax, shape, res_m=GRID_RES_M):
+def add_scalebar(ax, shape, res_m=GRID_RES_M, origin=(0, 0)):
     """
     Draw a scale bar top-right, sized from the panel's own ground extent.
 
@@ -259,18 +346,23 @@ def add_scalebar(ax, shape, res_m=GRID_RES_M):
     The panel is an imshow of the plot's canonical UTM cell grid with no `extent`, so axes
     coordinates are pixel indices and the grid resolution (`res_m`) is exact by construction --
     it is the grid this figure builds, not an assumed resolution of some source raster.
+
+    `shape`/`origin` describe the plot's REAL cell within the (possibly larger) padded panel, so the
+    bar is sized from the cell's own ground extent and sits inside it rather than out in the grey
+    padding.
     """
     h, w = shape[:2]
     if w <= 0 or h <= 0:
         return
+    ox, oy = origin
     width_km = w * res_m / 1000
     length_km = min(SCALEBAR_NICE_KM, key=lambda k: abs(k - SCALEBAR_FRAC * width_km))
     bar_px = length_km * 1000 / res_m
 
     margin = 0.05 * w
-    x1 = w - margin
+    x1 = ox + w - margin
     x0 = x1 - bar_px
-    y = 0.09 * h
+    y = oy + 0.09 * h
     stroke = [pe.withStroke(linewidth=3, foreground=SCALEBAR_OUTLINE)]
     ax.plot([x0, x1], [y, y], color=SCALEBAR_COLOR, lw=2, solid_capstyle="butt",
             path_effects=stroke, clip_on=False)
@@ -312,8 +404,12 @@ def draw_distribution(ax, nico, cci, gt, gt_std, xmax, first_row, last_row):
         ax.legend(fontsize=9.5, loc="upper right", framealpha=0.85, handlelength=1.6)
 
 
-def draw_s2(ax, rgb, valid, title):
+def draw_s2(ax, rgb, valid, title, cell_origin, cell_shape):
     """Show a TCI crop as-is (no stretch); nodata pixels drawn as neutral grey, plus a scale bar.
+
+    `rgb` already spans the reference canvas (see load_s2), so nothing is padded here; the plot's
+    0.1 deg cell is outlined inside it and the scale bar sits within that cell, matching the map
+    panels of the same row.
 
     The tile name now lives in the row label, and the acquisition date is not printed at all (the
     other qualitative figures do not print it either).
@@ -322,7 +418,8 @@ def draw_s2(ax, rgb, valid, title):
     disp[~valid] = int(BG * 255)
     ax.imshow(disp, interpolation="nearest")
     ax.set_xticks([]); ax.set_yticks([])
-    add_scalebar(ax, disp.shape)
+    add_scalebar(ax, cell_shape, origin=cell_origin)
+    mark_cell(ax, cell_origin, cell_shape)
     if title:
         ax.set_title(title, fontsize=10)
 
@@ -346,6 +443,11 @@ def main(plots, out_path, dpi):
     tiles_of_plot = {int(r.plot_index): [t.split("(")[0].strip() for t in str(r.s2_tiles).split(",")]
                      for r in sel.itertuples()}
 
+    # One panel size for the whole figure (see BG/CELL_EDGE_COLOR above).
+    canvas = reference_canvas(plots, px, py)
+    print(f"reference canvas: {canvas[0]}x{canvas[1]} px ({canvas[0]*GRID_RES_M/1000:.2f}"
+          f"x{canvas[1]*GRID_RES_M/1000:.2f} km)")
+
     nrows = len(plots)
     fig = plt.figure(figsize=(3.0 * 3 + 0.5 + 3.4, 3.0 * nrows))
     # Sentinel-2 | Ours map | CCI map | shared colourbar | spacer | distribution
@@ -355,6 +457,9 @@ def main(plots, out_path, dpi):
 
     for r, i in enumerate(plots):
         nico, cci = load_plot(i, px[i], py[i], yr[i])
+        # Where this plot's cell sits on the shared canvas: same for every panel of the row (they
+        # are all the same grid), so the outline, the scale bar and the badges all use it.
+        cell_origin = canvas_origin(nico.shape, canvas)
         gt = float(agb[i])
         gt_std = float(np.sqrt(var_tot[i])) if np.isfinite(var_tot[i]) else np.nan
 
@@ -374,11 +479,18 @@ def main(plots, out_path, dpi):
         if picked is not None:
             path, date, _ = picked
             tile = _tile_of(path)
-            rgb, valid = load_s2(path, px[i], py[i])
-            draw_s2(axs, rgb, valid, ("Sentinel-2 (TCI)" if r == 0 else ""))
+            rgb, valid = load_s2(path, px[i], py[i], canvas=canvas)
+            draw_s2(axs, rgb, valid, ("Sentinel-2 (TCI)" if r == 0 else ""),
+                    cell_origin, nico.shape)
+            off = (~valid).sum() / valid.size
+            if off > 0.001:
+                print(f"    plot {i}: {off*100:.1f}% of the context canvas is off-tile (greyed)")
         else:
             axs.text(0.5, 0.5, "S2 not found", ha="center", va="center",
                      fontsize=9, color="0.4", transform=axs.transAxes)
+            # Keep the placeholder the same shape/size as every other panel.
+            axs.set_xlim(-0.5, canvas[0] - 0.5); axs.set_ylim(canvas[1] - 0.5, -0.5)
+            axs.set_aspect("equal")
             axs.set_facecolor("0.95"); axs.set_xticks([]); axs.set_yticks([])
             if r == 0:
                 axs.set_title("Sentinel-2 (TCI)", fontsize=10)
@@ -388,16 +500,17 @@ def main(plots, out_path, dpi):
         axs.set_ylabel(f"{region}\n({tile}) (plot {i})", fontsize=9, fontweight="bold", labelpad=6)
         # The AGBRef reference sits on the S2 panel in the same badge style as the two map means,
         # so all three numbers of a row are read the same way: a cell-mean biomass in t/ha.
-        value_label(axs, f"{gt:.0f}±{gt_std:.0f} t/ha (n={int(n_field[i])})")
+        # All three badges of a row sit inside the plot's real cell.
+        value_label(axs, f"{gt:.0f}±{gt_std:.0f} t/ha (n={int(n_field[i])})", cell_origin, nico.shape)
 
         # Each map's cell mean is annotated ON the panel (bottom-left) rather than in its title,
         # matching the per-panel RMSE labels of the prediction-map figure.
         ax0 = fig.add_subplot(gs[r, 1])
-        draw_map(ax0, nico, vmax, ("Ours (AEF)" if r == 0 else ""))
-        value_label(ax0, f"{n_mean:.0f} t/ha")
+        draw_map(ax0, nico, vmax, ("Ours (AEF)" if r == 0 else ""), canvas)
+        value_label(ax0, f"{n_mean:.0f} t/ha", cell_origin, nico.shape)
         ax1 = fig.add_subplot(gs[r, 2])
-        draw_map(ax1, cci, vmax, ("ESA CCI" if r == 0 else ""))
-        value_label(ax1, f"{c_mean:.0f} t/ha")
+        draw_map(ax1, cci, vmax, ("ESA CCI" if r == 0 else ""), canvas)
+        value_label(ax1, f"{c_mean:.0f} t/ha", cell_origin, cci.shape)
 
         # Shared colourbar for the two maps, with the GT drawn on it as the reference.
         cax = fig.add_subplot(gs[r, 3])

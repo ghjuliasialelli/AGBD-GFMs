@@ -14,7 +14,18 @@ The SSL4EO-MoCo row is NOT like-for-like on two counts the caption MUST state:
     inference_agbd.py convention) whereas the AGBD/AEF rows here are masked only for WorldCover water
     at figure time. In practice the scenes are near cloud-free on the shown windows, but say it.
 
-Rows are the four sources, columns the three regions, with one shared colorbar. The styling follows
+Rows are the Sentinel-2 input, the GEDI L4A reference, and the four AGB sources; columns are the
+three regions, with one shared colorbar spanning every row that is in t/ha (all but Sentinel-2).
+
+The GEDI row shows the reference footprints each panel's RMSE is computed against -- the identical
+selection, taken from gedi_scatter.paired_samples and count-asserted against the "rmse" entries
+below, so the figure cannot show one footprint set while reporting another. Two things the caption
+must state: the markers are NOT to scale (a 25 m footprint is ~0.15 pt on a 41 km panel, so they are
+drawn oversized, and only their location and value are meaningful), and the columns differ enormously
+in coverage -- 51,995 cells in Europe against ~5-6k in the other two -- which is why the marker size
+is fixed rather than per-column.
+
+The styling follows
 the repo's existing map-figure conventions (see EcosystemAnalysis/Models/Biomes/Sumatra/
 compose_figure.py): viridis, no ticks, bold per-panel titles, PDF + PNG at 300 dpi. The one
 departure is VMAX (see below).
@@ -42,6 +53,7 @@ Usage:
 
 import argparse
 import glob
+import sys
 import numpy as np
 import rasterio as rs
 from rasterio.windows import from_bounds
@@ -59,6 +71,14 @@ from matplotlib import gridspec
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
 import matplotlib.patheffects as pe
+
+# The GEDI reference row reuses gedi_scatter.paired_samples VERBATIM rather than re-implementing the
+# footprint selection here. That selection (2020 footprints, one median value per 10 m S2 cell,
+# water-masked, valid in all four maps, inside the display crop) is precisely what the panel RMSEs
+# are computed over in gedi_per_tile_eval/metrics_4model.py -- a second copy of it would be free to
+# drift, and a figure that plots a different footprint set than it scores is worse than no row.
+sys.path.insert(0, dirname(abspath(__file__)))
+from gedi_scatter import paired_samples
 
 ###################################################################################################
 # Configuration
@@ -184,8 +204,15 @@ TILES = [
 # SSL4EO-MoCo sits with the other two model outputs (input -> models -> reference), after the
 # AGBD-features baseline it is being compared against. Its label carries "(30 m)" because it is the
 # one row not at 10 m -- the resolution difference is real and must not be silent on the figure.
+#
+# The GEDI row goes SECOND, between the input and the maps: it is the reference every RMSE on this
+# figure is measured against, and putting it above the model rows lets a reader see how much of each
+# panel is actually constrained by validation data before reading the numbers. Its cells sit on the
+# same t/ha colour scale as the maps below, so a footprint's colour is directly comparable to the
+# pixel underneath it. Like "s2" it is special-cased in the draw loop (a scatter, not a raster).
 ROWS = [
     {"key": "s2",     "label": "Sentinel-2 RGB"},
+    {"key": "gedi",   "label": "GEDI L4A footprints"},
     {"key": "aef",    "label": "AEF"},
     {"key": "agbd",   "label": "AGBD features"},
     {"key": "ssl4eo", "label": "SSL4EO-MoCo (30 m)"},
@@ -214,6 +241,19 @@ S2_PCT = (1, 99)
 # defines colour survives. This is the whole difference between this and per-band stretching:
 # tuning appearance is fine, fabricating colour is not.
 S2_GAMMA = 0.65
+
+# GEDI row. Marker size is in points^2 and is NOT to scale: a 25 m footprint on a 41 km panel is
+# ~0.15 pt across, i.e. invisible, so the markers are deliberately oversized and the caption must
+# say the row shows footprint LOCATIONS and values, not footprint extents. 32TPT carries 51,995
+# cells against ~5-6k for the other two columns, so a single size either speckles Europe into a
+# solid block or loses the other columns entirely -- the size is therefore derived from each
+# column's own count, not fixed.
+#
+# The marker size is the SAME in every column on purpose, even though 32TPT carries 51,995 cells
+# against ~5-6k for the other two: the wildly different GEDI coverage between columns is real
+# information about how well each number is supported, and per-column autoscaling would hide it.
+GEDI_BG = "0.95"                 # panel background where there is no footprint (not nodata: no data)
+GEDI_MARKER_PT = 0.8             # marker diameter in points (~3 px at 300 dpi), not to ground scale
 
 # Repo convention (Sumatra/compose_figure.py) is 0-250; raised here because the AGBD-features
 # panels reach ~417 t/ha and 250 clipped them visibly. 400 covers the p99 of every panel shown.
@@ -468,6 +508,58 @@ def water_mask(tile, bounds, crs, out_shape) :
     return np.isin(dst, WATER_CLASSES)
 
 
+def draw_gedi(ax, spec, bounds) :
+    """
+    Draw the GEDI L4A reference cells of a column: one marker per cell, coloured by its GEDI AGBD on
+    the same viridis ramp as the map rows.
+
+    These are exactly the cells the four RMSEs on this column are computed over -- same 2020 filter,
+    same per-10 m-cell median, same water mask, same all-four-maps-valid pairing, same display crop
+    -- because they come from gedi_scatter.paired_samples, which metrics_4model.py Method A mirrors.
+    The count is ASSERTED against spec["rmse"]["n"], the n those published numbers were computed
+    with: if the two ever diverge the figure would be plotting a different reference set than it
+    reports, silently, so this fails loudly instead.
+
+    Unlike the raster rows this panel is drawn in MAP coordinates (the tile's UTM metres) rather than
+    pixel indices, so the axes get explicit limits and an equal aspect; the ground covered, and hence
+    the alignment with the panels above and below, is identical.
+
+    Args:
+    - ax: the panel's axes.
+    - spec (dict): a TILES entry.
+    - bounds (tuple): (left, bottom, right, top) of the column window, in the tile's UTM CRS.
+
+    Returns:
+    - int: the number of cells drawn.
+    """
+    cx, cy, ref, _ = paired_samples(spec["tile"])
+
+    n_expected = spec.get("rmse", {}).get("n")
+    assert n_expected is None or len(ref) == n_expected, \
+        f'{spec["tile"]}: {len(ref)} GEDI cells drawn but the panel RMSEs report n = {n_expected}'
+
+    left, right = min(bounds[0], bounds[2]), max(bounds[0], bounds[2])
+    bottom, top = min(bounds[1], bounds[3]), max(bounds[1], bounds[3])
+    # paired_samples already restricts to the display window, so this is a bounds check, not a crop.
+    assert (cx >= left).all() and (cx <= right).all() and (cy >= bottom).all() and (cy <= top).all(), \
+        f'{spec["tile"]}: GEDI cells fall outside the display window {bounds}'
+
+    ax.set_facecolor(GEDI_BG)
+    ax.scatter(cx, cy, c = ref, cmap = CMAP, vmin = VMIN, vmax = VMAX,
+               s = GEDI_MARKER_PT ** 2, marker = "s", linewidths = 0)
+    ax.set_xlim(left, right) ; ax.set_ylim(bottom, top)
+    ax.set_aspect("equal")
+
+    # n on the panel, in the same slot and style as the maps' RMSE labels, because n is what makes
+    # those RMSEs readable -- 5,086 footprints and 51,995 footprints do not support equal confidence.
+    # Same slot and font as rmse_label, but a more opaque box: that one sits over viridis, this one
+    # over a pale background, where alpha 0.55 washes the box out to light grey.
+    ax.text(0.035, 0.04, f"n = {len(ref):,} cells", transform = ax.transAxes,
+            ha = "left", va = "bottom", fontsize = 8.5, color = "white", fontweight = "bold",
+            bbox = dict(boxstyle = "round,pad=0.25", fc = "black", ec = "none", alpha = 0.8))
+    return len(ref)
+
+
 def rmse_label(ax, spec, row_key) :
     """Annotate an AGB panel with this map's per-tile GEDI RMSE, bottom-LEFT (the scale bar is
     bottom-right). White text on a translucent dark box so it stays legible over any part of the
@@ -633,6 +725,10 @@ def make_figure(out_path, dpi) :
             # The CCI crop already sits on the AEF grid, so the same bounds apply unchanged.
             if row["key"] == "s2" :
                 path, bounds, crs = find_s2(agbd_path), col_bounds, col_crs
+            elif row["key"] == "gedi" :
+                # No raster: the footprints are read from the GEDI extract by draw_gedi. The column
+                # window is still required, since it is what the reference set is restricted to.
+                path, bounds, crs = col_bounds, col_bounds, col_crs
             elif row["key"] == "aef" :
                 path, bounds, crs = aef_path, col_bounds, col_crs
             elif row["key"] == "cci" :
@@ -646,8 +742,8 @@ def make_figure(out_path, dpi) :
             # ssl4eo joins agbd/s2 in the col_bounds guard: it too must be cropped to the column
             # window (two tiles carry a "crop"), so a None window means the column cannot be drawn.
             gone = (path is None
-                    or (row["key"] != "s2" and not exists(path))
-                    or (row["key"] in ("agbd", "s2", "ssl4eo") and col_bounds is None))
+                    or (row["key"] not in ("s2", "gedi") and not exists(path))
+                    or (row["key"] in ("agbd", "s2", "ssl4eo", "gedi") and col_bounds is None))
             if gone :
                 missing.append(f'{row["label"]} / {tile}')
                 ax.text(0.5, 0.5, f'[{row["label"]}\n{tile}]\nnot found', ha = "center",
@@ -665,6 +761,10 @@ def make_figure(out_path, dpi) :
                 # window on identical ground, so one bar per column (here) suffices; the white bar
                 # is outlined in black in add_scalebar so it stays legible over the imagery too.
                 add_scalebar(ax, p_bounds, data.shape[:2])
+            elif row["key"] == "gedi" :
+                # This panel is in map coordinates, so re-blank the ticks after the limits are set.
+                draw_gedi(ax, spec, col_bounds)
+                ax.set_xticks([]) ; ax.set_yticks([])
             else :
                 data, p_bounds, p_crs = read_panel(path, bounds = bounds, crs = crs)
 

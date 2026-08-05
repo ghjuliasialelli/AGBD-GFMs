@@ -29,13 +29,28 @@ models = {
     "SSL4EO MoCo":           (64.34,    204.1,       15.5),
     "TerraMind":             (68.327,   236.3,       16.0),
     "Prithvi2":              (66.431,   150.9,        7.0),
-    "Supervised":            (66.52,     61.7,      0.333)
+    # S2 / TESSERA / AEF are the same model on different inputs, so they
+    # share its throughput and fine-tuning cost.
+    "S2":                    (66.52,     61.7,      0.333),
+    "TESSERA":               (56.43,     61.7,      0.333),
+    "AEF":                   (53.70,     61.7,      0.333),
 }
+
+# The same fcn_film architecture, trained on three different inputs.
+FILM_VARIANTS = ("S2", "TESSERA", "AEF")
 
 names      = list(models.keys())
 rmse       = np.array([v[0] for v in models.values()])
 throughput = np.array([v[1] for v in models.values()])
 gpu_hours  = np.array([v[2] for v in models.values()])
+
+# ── Broken y axis ─────────────────────────────────────────────────────────────
+# AEF (53.7) and TESSERA (56.4) are ~8 RMSE clear of the field (next best:
+# SSL4EO MoCo at 64.3), so the axis is cut and the empty band dropped. Both
+# panels keep the same RMSE-per-inch — see height_ratios in make_plot().
+Y_HI = (63.0, 89.5)          # every other model
+Y_LO = (52.5, 58.0)          # AEF, TESSERA
+LO_TICKS = [54, 56]
 
 # ── Pareto front (lower RMSE + higher throughput = better) ────────────────────
 def pareto_mask(rmse, throughput):
@@ -175,16 +190,31 @@ def make_plot(mode="bubble", show_pareto=False, font_scale=1.0):
     # when it is shrunk down in the paper.
     fs = lambda pts: pts * font_scale
 
-    fig, ax = plt.subplots(figsize=(10, 7))
-    ax.tick_params(axis="both", labelsize=fs(10))
+    # The y axis is broken: AEF/TESSERA sit ~8 RMSE below the next model, and
+    # the empty band between them and SSL4EO MoCo would otherwise dominate the
+    # figure. `height_ratios` matches the two spans exactly, so the RMSE scale
+    # is identical above and below the break — only the gap is removed.
+    fig, (ax, ax_lo) = plt.subplots(
+        2, 1, figsize=(10, 7), sharex=True,
+        gridspec_kw=dict(height_ratios=[Y_HI[1] - Y_HI[0], Y_LO[1] - Y_LO[0]],
+                         hspace=0.06),
+    )
+    axes = (ax, ax_lo)
+    # Every point is drawn on both panels; the y limits decide which is visible.
+    ax.set_ylim(*Y_HI)
+    ax_lo.set_ylim(*Y_LO)
+    ax_lo.set_yticks(LO_TICKS)
+    for a in axes:
+        a.tick_params(axis="both", labelsize=fs(10))
 
     # -- Pareto front line --
     if show_pareto:
-        ax.plot(
-            throughput[pareto_idx], rmse[pareto_idx],
-            "--", color="gray", alpha=0.5, linewidth=1.2, zorder=1,
-            label="Pareto front",
-        )
+        for a in axes:
+            a.plot(
+                throughput[pareto_idx], rmse[pareto_idx],
+                "--", color="gray", alpha=0.5, linewidth=1.2, zorder=1,
+                label="Pareto front" if a is ax else None,
+            )
 
 
     # -- Scatter --
@@ -192,11 +222,12 @@ def make_plot(mode="bubble", show_pareto=False, font_scale=1.0):
     if mode == "bubble":
         # Size encodes GPU-hours, uniform color
         sizes = 40 + (gpu_hours / gpu_hours.max()) * 800
-        sc = ax.scatter(
-            throughput, rmse, s=sizes,
-            c=np.where(mask, "#2563eb", "#9ca3af"),
-            alpha=0.6, edgecolors="white", linewidths=0.8, zorder=2,
-        )
+        for a in axes:
+            sc = a.scatter(
+                throughput, rmse, s=sizes,
+                c=np.where(mask, "#2563eb", "#9ca3af"),
+                alpha=0.6, edgecolors="white", linewidths=0.8, zorder=2,
+            )
         # Size legend
         for hours_val in [5, 20, 140]:
             ax.scatter([], [], s=40 + (hours_val / gpu_hours.max()) * 800,
@@ -208,15 +239,16 @@ def make_plot(mode="bubble", show_pareto=False, font_scale=1.0):
         # Clip colorbar at 20 GPU-h so the non-outlier models use the full
         # color range; SpectralGPT (140 h) gets the "over" color.
         CLIP = 20
-        cmap = cm.get_cmap("viridis").copy()
+        cmap = plt.get_cmap("viridis").copy()
         cmap.set_over("#ff6b35")          # distinct "over-range" color
         norm = mcolors.LogNorm(vmin=gpu_hours.min(), vmax=CLIP)
-        sc = ax.scatter(
-            throughput, rmse, s=120,
-            c=gpu_hours, cmap=cmap, norm=norm,
-            edgecolors="white", linewidths=0.8, zorder=2,
-        )
-        cbar = fig.colorbar(sc, ax=ax, shrink=0.7, pad=0.02, extend="max")
+        for a in axes:
+            sc = a.scatter(
+                throughput, rmse, s=120,
+                c=gpu_hours, cmap=cmap, norm=norm,
+                edgecolors="white", linewidths=0.8, zorder=2,
+            )
+        cbar = fig.colorbar(sc, ax=list(axes), shrink=0.7, pad=0.02, extend="max")
         cbar.set_label("GPU-hours (>20 = outlier)", fontsize=fs(11))
         # Explicit ticks at intuitive values within range
         tick_vals = [0.5, 1, 2, 5, 10, 20]
@@ -228,13 +260,14 @@ def make_plot(mode="bubble", show_pareto=False, font_scale=1.0):
         # Both size + color
         sizes = 40 + (gpu_hours / gpu_hours.max()) * 800
         norm = mcolors.LogNorm(vmin=gpu_hours.min(), vmax=gpu_hours.max())
-        cmap = cm.get_cmap("viridis")
-        sc = ax.scatter(
-            throughput, rmse, s=sizes,
-            c=gpu_hours, cmap=cmap, norm=norm,
-            edgecolors="white", linewidths=0.8, alpha=0.75, zorder=2,
-        )
-        cbar = fig.colorbar(sc, ax=ax, shrink=0.7, pad=0.02)
+        cmap = plt.get_cmap("viridis")
+        for a in axes:
+            sc = a.scatter(
+                throughput, rmse, s=sizes,
+                c=gpu_hours, cmap=cmap, norm=norm,
+                edgecolors="white", linewidths=0.8, alpha=0.75, zorder=2,
+            )
+        cbar = fig.colorbar(sc, ax=list(axes), shrink=0.7, pad=0.02)
         cbar.set_label("GPU-hours", fontsize=fs(11))
         cbar.ax.tick_params(labelsize=fs(10))
         for hours_val in [5, 20, 140]:
@@ -242,29 +275,46 @@ def make_plot(mode="bubble", show_pareto=False, font_scale=1.0):
                        c="gray", alpha=0.5, edgecolors="white",
                        label=f"{hours_val} GPU-h")
 
+    # -- Mark the three fcn_film runs --
+    # S2/TESSERA/AEF are one architecture on three inputs; a cross inside the
+    # marker flags them as a family (the caption says which input is which).
+    film_idx = [names.index(n) for n in FILM_VARIANTS]
+    cross_s = 0.5 * np.broadcast_to(sizes, (len(names),))[film_idx]
+    for a in axes:
+        a.scatter(throughput[film_idx], rmse[film_idx], marker="+", s=cross_s,
+                  c="white", linewidths=1.2 * font_scale, zorder=3)
+
     # -- Labels --
     # Per-label (dx, dy) offsets in points to avoid overlaps.
     # Clusters needing care:
-    #   • CROMA / Supervised  — nearly same RMSE, close throughput
+    #   • CROMA / S2  — nearly same RMSE, close throughput
     #   • Prithvi2 / DOFA / Prithvi — all ~throughput 150
+    #   • S2 / TESSERA / AEF — identical throughput, stacked vertically
     label_offsets = {
-        "CROMA":       ( 1,   8),
-        "Supervised":  (0,  -14),
+        # Directly above its own marker (the right one of the near-coincident
+        # CROMA/S2 pair), with S2 directly below the left one.
+        "CROMA":       (  0,  10),
+        "S2":          (  0, -18),
         "SpectralGPT": (  0.1,   10),
         "ScaleMAE":    (  0,   10),
         "TerraMind":   (  0,   10),
         "Prithvi2":    (  0,    8),
         "GFM-Swin":    (  0,   10),
-        "RemoteCLIP":  (  0,  10),
+        "RemoteCLIP":  ( 18,  10),
         "SatLAS-Net":  (  0,   10),
     }
     # Labels set beside their marker instead of above it: the ~throughput 150
     # pair reads better split left/right than stacked, and they are pinned so
     # the de-overlap pass never drags them back on top of each other.
-    side_labels = {"DOFA": "left", "Prithvi": "right", "SSL4EO MoCo": "right"}
+    # TESSERA/AEF share S2's throughput, so they are labelled to the right
+    # of their markers rather than stacked above them.
+    side_labels = {"DOFA": "left", "Prithvi": "right", "SSL4EO MoCo": "right",
+                   "TESSERA": "right", "AEF": "right"}
+    # Hand-placed labels the de-overlap pass must leave exactly where they are.
+    fixed_labels = {"CROMA", "S2"}
 
     marker_radii = np.broadcast_to(np.sqrt(np.atleast_1d(sizes) / np.pi), (len(names),))
-    annotations, pinned = [], []
+    annotations, pinned, no_leader, is_fixed = [], [], [], []
     for i, name in enumerate(names):
         side = side_labels.get(name)
         if side:
@@ -279,35 +329,69 @@ def make_plot(mode="bubble", show_pareto=False, font_scale=1.0):
             # starting guess — separate_labels() resolves what still collides.
             dx, dy = fs(dx), fs(dy)
             ha, va = ("left" if dx > 0 else ("right" if dx < 0 else "center")), "baseline"
-        pinned.append(bool(side))
-        annotations.append(ax.annotate(
+        pinned.append(bool(side) or name in fixed_labels)
+        # Side labels touch their marker, so they never get a leader line; the
+        # hand-placed ones always do (see the second pass below), because their
+        # markers have a near neighbour and the pairing must be spelled out.
+        no_leader.append(bool(side) or name in fixed_labels)
+        is_fixed.append(name in fixed_labels)
+        # Each label lives on the panel its marker is visible in.
+        host = ax_lo if rmse[i] < Y_LO[1] else ax
+        annotations.append(host.annotate(
             name, (throughput[i], rmse[i]),
             textcoords="offset points", xytext=(dx, dy),
             ha=ha, va=va, fontsize=fs(10), fontweight=500,
             color="#333",
         ))
 
-    ax.set_xlabel("Throughput (samples/s)", fontsize=fs(12))
-    ax.set_ylabel("RMSE", fontsize=fs(12))
+    ax_lo.set_xlabel("Throughput (samples/s)", fontsize=fs(12))
+    fig.supylabel("RMSE", fontsize=fs(12))
     handles, labels = ax.get_legend_handles_labels()
     legend = ax.legend(loc="upper right", fontsize=fs(9), framealpha=0.9) if handles else None
-    ax.grid(True, alpha=0.15)
-    ax.spines[["top", "right"]].set_visible(False)
-    # Room for the labels to move into, scaled with the text.
-    ax.margins(x=0.05 + 0.04 * font_scale, y=0.05 + 0.04 * font_scale)
+    for a in axes:
+        a.grid(True, alpha=0.15)
+        a.spines[["top", "right"]].set_visible(False)
+    # Horizontal room for the labels to move into, scaled with the text. The y
+    # limits are fixed by the break, so no y margin.
+    ax.margins(x=0.05 + 0.04 * font_scale)
+
+    # -- Break marks: hide the facing spines, draw the slanted cut --
+    ax.spines["bottom"].set_visible(False)
+    ax.tick_params(bottom=False, labelbottom=False)
+    ax_lo.spines["top"].set_visible(False)
+    d = 0.4 * font_scale
+    kw = dict(marker=[(-1, -d), (1, d)], markersize=10 * font_scale,
+              linestyle="none", color="k", mec="k", mew=1, clip_on=False)
+    ax.plot([0], [0], transform=ax.transAxes, **kw)
+    ax_lo.plot([0], [1], transform=ax_lo.transAxes, **kw)
 
     plt.tight_layout()
 
     # -- Push labels apart (from each other, the markers and the legend) --
+    # Run per panel: the two are disjoint in display space, so labels only ever
+    # need to be resolved against the ones sharing their axes.
     fig.canvas.draw()                      # transforms must reflect tight_layout
-    obstacles = marker_boxes(ax, throughput, rmse, sizes)
-    if legend is not None:
-        obstacles.append(legend.get_window_extent(fig.canvas.get_renderer()))
-    if not separate_labels(fig, ax, annotations, obstacles, pinned=pinned):
-        print("Warning: labels still overlap after de-overlap pass")
-    # Pinned labels sit beside their marker, so they never need a leader.
-    add_leader_lines(fig, ax, annotations, throughput, rmse, sizes,
-                     gap_pt=6.0 * font_scale, skip=pinned)
+    for a in axes:
+        idx = [i for i, ann in enumerate(annotations) if ann.axes is a]
+        if not idx:
+            continue
+        obstacles = marker_boxes(a, throughput, rmse, sizes)
+        if legend is not None and a is ax:
+            obstacles.append(legend.get_window_extent(fig.canvas.get_renderer()))
+        sub = [annotations[i] for i in idx]
+        if not separate_labels(fig, a, sub, obstacles,
+                               pinned=[pinned[i] for i in idx]):
+            print(f"Warning: labels still overlap after de-overlap pass ({a})")
+        # Side labels sit beside their marker, so they never need a leader.
+        sizes_i = np.broadcast_to(sizes, (len(names),))[idx]
+        add_leader_lines(fig, a, sub, throughput[idx], rmse[idx], sizes_i,
+                         gap_pt=6.0 * font_scale,
+                         skip=[no_leader[i] for i in idx])
+        # CROMA and S2 have near-coincident markers, so they get a
+        # leader whatever the gap (gap_pt=0) to make the pairing unambiguous.
+        add_leader_lines(fig, a, sub, throughput[idx], rmse[idx], sizes_i,
+                         gap_pt=0.0,
+                         skip=[not is_fixed[i] for i in idx])
     suffix = "_bigfont" if font_scale != 1.0 else ""
     out = f"pareto_{mode}{suffix}.png"
     plt.savefig(out, dpi=300, bbox_inches="tight")
