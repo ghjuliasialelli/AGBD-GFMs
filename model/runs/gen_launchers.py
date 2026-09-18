@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate the supervised training launchers (model/runs/nico/ and model/runs/lp-mlp/).
+Generate the supervised training launchers (model/runs/nico/, model/runs/lp-mlp/ and model/runs/upernet/).
 
 One shared TEMPLATE + a per-experiment knob table (SPECS). Previously these 18 scripts
 were maintained by hand and had drifted into 9 near-identical skeletons; this collapses
@@ -18,8 +18,9 @@ experiment states its own knobs in SPECS; only differences from DEFAULTS are lis
 Derived values (in_features, emb_dim, num_outputs, film) are still computed in bash by the
 template, exactly as before -- they are NOT baked in, so editing a knob stays correct.
 
-Verified: the 18 emitted scripts produce byte-identical `train.py` arguments to the
-hand-written originals (shim-harness diff, 0 mismatches).
+Verified: the 18 original scripts produce byte-identical `train.py` arguments to the
+hand-written originals (shim-harness diff, 0 mismatches). model/runs/upernet/aef.sh was
+added later, from the same template.
 
 NOTE: experiments/generalization/train_ablations/ is NOT generated here -- those 15 scripts
 already share a single (newer) skeleton with the geo-ablation + stats logic, so they have no
@@ -118,6 +119,9 @@ DEFAULTS = {
     'tmpdir': '"true"',
     'topo': '"true"',
     'train_mask': '"false"',
+    'upernet_channels': '512',
+    'upernet_levels': '4',
+    'upernet_pyramid': '"flat" # flat (levels at the input resolution) or vit (PANGAEA\'s 4,2,1,0.5; ~17GB at batch_size=32)',
     'val_mask': '"false"',
     'years': '(2019 2020)',
 }
@@ -134,6 +138,21 @@ SBATCH_DEFAULTS = {
 }
 
 # Per-experiment overrides. Only what differs from DEFAULTS.
+# The three LP experiments override `lr`. The LP regresses the un-normalised target
+# (--norm false, i.e. AGB in Mg/ha, train mean 67.4) from mean-std standardised, hence
+# zero-mean, embeddings, so its bias alone has to carry the label mean. Adam moves each
+# parameter by at most ~lr per step, so total travel is bounded by lr x n_steps and is
+# independent of batch_size. At batch_size=2048 this schedule affords
+# lr x (30 + 20 x gamma) x steps_per_epoch of travel; at lr=0.001 on AGBD-Lite that is
+# 5.8 units against the ~67 needed, and all nine LP checkpoints trained that way sit
+# pinned at that ceiling (bias 5.68, |w|max 5.88, 9100 steps). Raising lr is the right
+# lever rather than lowering batch_size: the large batch is cheap and near-exact for a
+# 65-parameter single-pixel model, and the Full regime is wall-clock bound, so smaller
+# batches would make it worse. lr=0.05 leaves ~3x headroom in both regimes. Check a run
+# converged rather than assuming it did -- bias should approach the label mean, |w|max
+# should sit well below lr x n_steps, and EarlyStopping wait_count should be > 0 at the
+# end. The MLP and fcn_film keep lr=0.001: at batch_size=64/128 they take ~32x more
+# steps per epoch, so they are nowhere near this bound.
 SPECS = {
     'model/runs/lp-mlp/lp_aef.sh': {
         'knobs': {
@@ -148,6 +167,7 @@ SPECS = {
             'latlon': '"false"',
             'lc': '"false"',
             'lite_chunk_size': '32 # chunk size to use when lite is true',
+            'lr': '0.05 # see the note above SPECS: lr must track the un-normalised target scale',
             'n_epochs': '50',
             'n_members': '3',
             'patch_size': '(1 1) # (has to be 2k+1, 2k+1) and 2k+1 should be a multiple of 5',
@@ -178,6 +198,7 @@ SPECS = {
             'latlon': '"false"',
             'lc': '"false"',
             'lite': '"true"',
+            'lr': '0.05 # see the note above SPECS: lr must track the un-normalised target scale',
             'n_epochs': '50',
             'n_members': '3',
             'patch_size': '(1 1) # (has to be 2k+1, 2k+1) and 2k+1 should be a multiple of 5',
@@ -207,6 +228,7 @@ SPECS = {
             'latlon': '"false"',
             'lc': '"false"',
             'lite': '"true"',
+            'lr': '0.05 # see the note above SPECS: lr must track the un-normalised target scale',
             'n_epochs': '50',
             'n_members': '3',
             'patch_size': '(1 1) # (has to be 2k+1, 2k+1) and 2k+1 should be a multiple of 5',
@@ -304,6 +326,31 @@ SPECS = {
             'sbatch_array': '1-3',
             'sbatch_mem_per_cpu': '4G',
         },
+    },
+    'model/runs/upernet/aef.sh': {
+        # PANGAEA's RegUPerNet decoder on the AEF embeddings: same inputs as
+        # model/runs/nico/aef.sh, different architecture. No FiLM (the head has no
+        # conditioning path -- upernet.py raises if it is given one), hence no ensemble.
+        # lr matches PANGAEA's optimizer config (1e-4) rather than nico's 1e-3.
+        'knobs': {
+            'aef': '"true"',
+            'alos': '"false"',
+            'arch': '"upernet"',
+            'aspect': '"false"',
+            'bands': '() #(B02 B03 B04 B08) #(B01 B02 B03 B04 B05 B06 B07 B08 B8A B09 B11 B12)',
+            'dem': '"false"',
+            'ft_cat2vec': '"false"',
+            'latlon': '"false"',
+            'lc': '"false"',
+            'lr': '0.0001',
+            'predict': '"agbd" # agbd or rh98 or biome',
+            's2_dates': '"false"',
+            's2_day': '"false"',
+            's2_doy': '"false"',
+            'slope': '"false"',
+            'topo': '"false"',
+        },
+        'sbatch': {},
     },
     'model/runs/nico/aef.sh': {
         'knobs': {
@@ -661,6 +708,11 @@ num_sepconv_blocks={num_sepconv_blocks}
 num_sepconv_filters={num_sepconv_filters}
 long_skip={long_skip}
 returns={returns}
+
+# UPerNet architecture (arch="upernet"; ignored by the other architectures)
+upernet_channels={upernet_channels}
+upernet_levels={upernet_levels}
+upernet_pyramid={upernet_pyramid}
 
 only_entry={only_entry}
 l2={l2}
@@ -1081,6 +1133,9 @@ torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=$NNODES --npro
                     --biome $biome \
                     --num_sepconv_blocks $num_sepconv_blocks \
                     --num_sepconv_filters $num_sepconv_filters \
+                    --upernet_channels $upernet_channels \
+                    --upernet_levels $upernet_levels \
+                    --upernet_pyramid $upernet_pyramid \
                     --long_skip $long_skip \
                     --new_stats $new_stats \
                     --only_entry $only_entry \

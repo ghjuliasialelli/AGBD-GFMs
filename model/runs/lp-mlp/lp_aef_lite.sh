@@ -151,6 +151,11 @@ num_sepconv_filters=256
 long_skip="true"
 returns="dense" # dense or pixel
 
+# UPerNet architecture (arch="upernet"; ignored by the other architectures)
+upernet_channels=512
+upernet_levels=4
+upernet_pyramid="flat" # flat (levels at the input resolution) or vit (PANGAEA's 4,2,1,0.5; ~17GB at batch_size=32)
+
 only_entry="true" # whether to only put FiLM layers in the entry block
 l2=0.00001
 
@@ -378,7 +383,7 @@ n_epochs=50
 batch_size=2048
 limit="false"
 reweighting='no'
-lr=0.001
+lr=0.05 # see the note above SPECS: lr must track the un-normalised target scale
 step_size=30
 gamma=0.1
 patience=1000
@@ -570,6 +575,9 @@ torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=$NNODES --npro
                     --biome $biome \
                     --num_sepconv_blocks $num_sepconv_blocks \
                     --num_sepconv_filters $num_sepconv_filters \
+                    --upernet_channels $upernet_channels \
+                    --upernet_levels $upernet_levels \
+                    --upernet_pyramid $upernet_pyramid \
                     --long_skip $long_skip \
                     --new_stats $new_stats \
                     --only_entry $only_entry \

@@ -206,7 +206,12 @@ if __name__ == '__main__' :
                 local = (args.dataset_path == 'local'), device = device, biome_dim = args.biome_dim, emb_dim = args.emb_dim,
                 num_sepconv_blocks = args.num_sepconv_blocks, 
                 num_sepconv_filters = args.num_sepconv_filters, long_skip = args.long_skip, only_entry = args.only_entry,
-                linear_emb = args.linear_emb, padding_mode = args.padding_mode, returns = args.returns)
+                linear_emb = args.linear_emb, padding_mode = args.padding_mode, returns = args.returns,
+                # getattr: runs trained before the `upernet` arch existed have no upernet_* key in
+                # their wandb config, and these are ignored by every other architecture anyway.
+                upernet_channels = getattr(args, 'upernet_channels', 512),
+                upernet_pyramid = getattr(args, 'upernet_pyramid', 'flat'),
+                upernet_levels = getattr(args, 'upernet_levels', 4))
             
             model = Model(model, lr = args.lr, step_size = args.step_size, gamma = args.gamma, 
                     patch_size = args.patch_size, downsample = args.downsample, 

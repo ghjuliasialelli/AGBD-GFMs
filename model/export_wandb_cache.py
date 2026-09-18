@@ -37,7 +37,7 @@ from wandb_cache import CACHE_DIR, cache_path
 
 # The wandb projects eval.py is pointed at by the committed eval configs
 # (model/eval/configs/*.txt and model/eval/runs/*.sh all set arch to one of these).
-ARCHS = ['nico_film', 'mlp', 'lp']
+ARCHS = ['nico_film', 'mlp', 'lp', 'upernet']
 
 ###################################################################################################
 # Helper functions

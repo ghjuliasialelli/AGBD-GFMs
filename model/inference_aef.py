@@ -289,7 +289,12 @@ class Inference:
                     local = (self.args.dataset_path == 'local'), device = self.device, biome_dim = self.args.biome_dim, emb_dim = self.args.emb_dim,
                     num_sepconv_blocks = self.args.num_sepconv_blocks, 
                     num_sepconv_filters = self.args.num_sepconv_filters, long_skip = self.args.long_skip, only_entry = self.args.only_entry, 
-                    linear_emb = self.args.linear_emb, padding_mode = self.args.padding_mode, returns = self.args.returns)
+                    linear_emb = self.args.linear_emb, padding_mode = self.args.padding_mode, returns = self.args.returns,
+                    # getattr: runs trained before the `upernet` arch existed have no upernet_* key
+                    # in their wandb config; ignored by every other architecture anyway.
+                    upernet_channels = getattr(self.args, 'upernet_channels', 512),
+                    upernet_pyramid = getattr(self.args, 'upernet_pyramid', 'flat'),
+                    upernet_levels = getattr(self.args, 'upernet_levels', 4))
 
         model = Model(model, lr = self.args.lr, step_size = self.args.step_size, gamma = self.args.gamma, 
                         patch_size = self.args.patch_size, downsample = self.args.downsample, 

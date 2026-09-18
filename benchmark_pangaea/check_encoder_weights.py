@@ -54,7 +54,7 @@ from hydra.utils import instantiate
 # `working_ones` in any of the benchmark_pangaea/*/gen.py generators.
 ENCODERS = [
     'croma_optical',
-    'dofa',
+    'dofa_optical',
     'gfmswin',
     'prithvi',
     'prithvi2_100m',
@@ -64,6 +64,12 @@ ENCODERS = [
     'spectralgpt',
     'ssl4eo_moco',
     'terramind_optical_tiny',
+    # Multimodal (optical + SAR) variants. croma_joint and terramind_tiny read the same
+    # weight files as croma_optical / terramind_optical_tiny -- one multimodal checkpoint,
+    # of which each class loads a different subset -- and dofa_joint is the multimodal DOFA.
+    'croma_joint',
+    'terramind_tiny',
+    'dofa_joint',
 ]
 
 ###################################################################################################

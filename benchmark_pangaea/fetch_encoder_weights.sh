@@ -53,20 +53,22 @@ if [ "$ZENODO_RECORD" = "REPLACE_WITH_RECORD_ID" ]; then
     exit 1
 fi
 
-# One entry per encoder actually used by the paper: "<file>|<md5>|<encoder>".
+# One entry per weight FILE used by the paper: "<file>|<md5>|<encoders>". A single file can
+# serve several encoder configs (CROMA and TerraMind ship one multimodal checkpoint that
+# the optical-only and joint classes load different subsets of), hence the comma lists.
 # The md5s are of the exact files our runs loaded (computed 2026-07-17), so a truncated or
 # corrupted download is caught here rather than surfacing later as an opaque shape or
 # state_dict error. If you re-upload a file to Zenodo, update its md5 here.
 FILES=(
-    "CROMA_large.pt|6375e92f3c5d715bb4c4fc7087353f56|croma_optical"
-    "DOFA_ViT_base_e100.pth|4c76995c8fbd95a456581dbe9b0e2397|dofa"
+    "CROMA_large.pt|6375e92f3c5d715bb4c4fc7087353f56|croma_optical,croma_joint"
+    "DOFA_ViT_base_e100.pth|4c76995c8fbd95a456581dbe9b0e2397|dofa_optical,dofa_joint"
     "Prithvi_100M.pt|882987da172c18e11fe95828aa0090ca|prithvi"
     "Prithvi_EO_V2_100M_TL.pt|da41788f5e73d3374762c48acaf8b1cb|prithvi2_100m"
     "RemoteCLIP-ViT-B-32.pt|f99b4a164b93d5c1e9459960af5a9a11|remoteclip"
     "scalemae-vitlarge-800.pth|67d6803a25bfce51af9b5d7170e2d330|scalemae"
     "SpectralGPT+.pth|aeaa08388f0937e3f07ecbd7757f20dc|spectralgpt"
     "B13_vits16_moco_0099.pth|b8d8c32f5142229dc6f89c46c1fd53ac|ssl4eo_moco"
-    "TerraMind_v1_tiny.pt|d345af451025c537689a2b8169731cae|terramind_optical_tiny"
+    "TerraMind_v1_tiny.pt|d345af451025c537689a2b8169731cae|terramind_optical_tiny,terramind_tiny"
     "gfm.pth|095e4840e320216b41d7d9549ddc397d|gfmswin"
 )
 

@@ -13,7 +13,7 @@ should cite the original publication for any encoder you use.**
 | Encoder | File | Weights licence | Original source |
 |---|---|---|---|
 | `croma_optical` | `CROMA_large.pt` | MIT | [huggingface.co/antofuller/CROMA](https://huggingface.co/antofuller/CROMA) |
-| `dofa` | `DOFA_ViT_base_e100.pth` | CC-BY-4.0 | [huggingface.co/XShadow/DOFA](https://huggingface.co/XShadow/DOFA) |
+| `dofa_optical` | `DOFA_ViT_base_e100.pth` | CC-BY-4.0 | [huggingface.co/XShadow/DOFA](https://huggingface.co/XShadow/DOFA) |
 | `prithvi` | `Prithvi_100M.pt` | Apache-2.0 | [huggingface.co/ibm-nasa-geospatial/Prithvi-EO-1.0-100M](https://huggingface.co/ibm-nasa-geospatial/Prithvi-100M) |
 | `prithvi2_100m` | `Prithvi_EO_V2_100M_TL.pt` | Apache-2.0 | [huggingface.co/ibm-nasa-geospatial/Prithvi-EO-2.0-100M-TL](https://huggingface.co/ibm-nasa-geospatial/Prithvi-EO-2.0-100M-TL) |
 | `remoteclip` | `RemoteCLIP-ViT-B-32.pt` | **not stated** | [huggingface.co/chendelong/RemoteCLIP](https://huggingface.co/chendelong/RemoteCLIP) |

@@ -39,11 +39,35 @@ all of our additions; the messy `agbd` development branch is preserved for histo
   Apache-2.0 header preserved), THOR, TerraMind, plus a SpectralGPT shape fix.
 - `pangaea/engine/trainer.py`: fractional `eval_interval` (intra-epoch validation).
 
-The 11 benchmarked encoders are: `croma_optical`, `dofa`, `gfmswin`, `prithvi`,
+The 11 benchmarked encoders are: `croma_optical`, `dofa_optical`, `gfmswin`, `prithvi`,
 `remoteclip`, `satlasnet_si`, `scalemae`, `spectralgpt`, `ssl4eo_moco`,
 `terramind_optical_tiny`, `prithvi2_100m`. All 11 — plus `decoder=reg_upernet`,
 `task=regression`, `criterion=mse`, and both dataset configs — resolve at the pinned
 commit.
+
+### The SAR runs
+
+The paper's 11 encoders are optical-only. The AGBD datasets also carry a SAR modality
+(ALOS-PALSAR-2 gamma naught, HH/HV), which the dataset configs list under the band names
+`VV`/`VH` so the Sentinel-1-pretrained encoders match it — co-pol to co-pol, cross-pol to
+cross-pol. That pairing is a real domain shift (L-band vs C-band), not a like-for-like
+substitution.
+
+Three encoders consume it: **`croma_joint`**, **`terramind_tiny`** and **`dofa_joint`**.
+`train_runs/gen.py` and `throughput/gen.py` hold them in a `SAR_ENCODERS` list, separate
+from `OPTICAL_ENCODERS`, so the optical benchmark stays reproducible on its own.
+
+- `croma_joint` and `terramind_tiny` load the *same weight files* as `croma_optical` and
+  `terramind_optical_tiny`. Both upstream checkpoints are single multimodal models (CROMA
+  ships `s1_encoder` / `s2_encoder` / `joint_encoder` in one file; TerraMind ships
+  per-modality embeddings), and each encoder class loads a different subset. No extra
+  downloads are needed.
+- `dofa_optical` / `dofa_joint` are ours. Upstream `dofa.yaml` takes `${dataset.bands}`,
+  so on a dataset carrying SAR it silently becomes multimodal, under a run-directory name
+  indistinguishable from an optical run. The two explicit configs avoid that. **The
+  paper's DOFA runs are `dofa_optical`.**
+- These runs need a fork newer than the pinned commit above: the pin has neither the
+  SAR-enabled AGBD dataset configs nor `dofa_optical.yaml` / `dofa_joint.yaml`.
 
 ## How to use these launchers
 

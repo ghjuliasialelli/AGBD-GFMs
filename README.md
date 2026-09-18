@@ -144,6 +144,9 @@ bash model/runs/nico/agbd.sh          # or: sbatch model/runs/nico/agbd.sh
 # Embedding heads on AEF / TESSERA
 bash model/runs/lp-mlp/mlp_aef.sh     # lp_* / mlp_* × aef / tessera
 
+# The GFM benchmark's decoder (PANGAEA RegUPerNet) on AEF embeddings
+bash model/runs/upernet/aef.sh
+
 # Evaluate + plot; pick the experiment via `config=` (see model/eval/configs/*.txt)
 bash model/eval/eval.sh
 
@@ -171,6 +174,7 @@ Which launcher maps to which experiment:
 |---|---|
 | `model/runs/nico/` | supervised SOTA per input type: `agbd.sh`, `aef.sh`, `tessera_lite.sh`, `aef_agbd*.sh` (AEF+AGBD features), plus `_lite` / `_nolatlon` variants |
 | `model/runs/lp-mlp/` | linear-probe / MLP heads on AEF & TESSERA embeddings |
+| `model/runs/upernet/` | PANGAEA's RegUPerNet decoder (the one the GFM benchmark uses) on AEF embeddings -- see `model/upernet.py` |
 | `experiments/generalization/train_ablations/` | geographic hold-out + temporal (2019/2020) ablations |
 | `experiments/generalization/eval_ablations/` | evaluation counterparts of the above |
 | `benchmark_pangaea/train_runs/` | the 11-GFM benchmark on AGBD-Lite (runs in the fork) |
@@ -184,7 +188,7 @@ owns a shared template plus a per-experiment knob table; edit the generator and 
 
 | generator | emits |
 |---|---|
-| `model/runs/gen_launchers.py` | 18 training launchers (`nico/`, `lp-mlp/`) |
+| `model/runs/gen_launchers.py` | 19 training launchers (`nico/`, `lp-mlp/`, `upernet/`) |
 | `model/eval/runs/gen.py` | 24 evaluation launchers |
 | `experiments/generalization/train_ablations/gen.py` | 15 ablation training launchers |
 | `experiments/generalization/eval_ablations/gen.py` | 37 ablation evaluation launchers |
@@ -202,6 +206,14 @@ framework. `benchmark_pangaea/` here contains only the launchers; the dataset cl
 encoder code live in our fork,
 [`ghjuliasialelli/pangaea-bench`](https://github.com/ghjuliasialelli/pangaea-bench) at tag
 `agbd-gfm-paper` (commit `b9470d0`). See `benchmark_pangaea/README.md` for details.
+
+One piece of PANGAEA is vendored here rather than left in the fork: `model/pangaea_decoders/`
+holds its UPerNet decoder (plus the `LTAE` and base classes it imports), so that
+`--arch upernet` can train the benchmark's decoder head on this repo's inputs -- see
+`model/upernet.py` and `model/runs/upernet/`. **That code is GPL-3.0**, inherited from
+upstream, whereas this repository is MIT; decide how to handle the combination (relicense,
+keep it out of the released tree, or ship it as a clearly-marked GPL subdirectory) before
+publishing.
 
 
 ## Large artifacts

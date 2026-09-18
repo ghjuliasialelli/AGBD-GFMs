@@ -208,6 +208,11 @@ def setup_parser():
     
     # UNet model arguments
 
+    # UPerNet model arguments (arch `upernet`; ignored by the other architectures)
+    parser.add_argument("--upernet_channels", type = int, default = 512, help = 'Width of the UPerNet decoder (PANGAEA uses 512).')
+    parser.add_argument("--upernet_pyramid", type = str, default = 'flat', choices = ['flat', 'vit'], help = "How the UPerNet neck rescales the feature levels: `flat` keeps them at the input resolution, `vit` applies PANGAEA's (4, 2, 1, 0.5), which costs ~27x the activation memory per sample (~17 GB at batch_size=32). See upernet.py.")
+    parser.add_argument("--upernet_levels", type = int, default = 4, help = 'Number of feature levels fed to the UPerNet FPN.')
+
     # Nico model arguments
     parser.add_argument("--num_sepconv_blocks", type = int, default = 8, help = 'Number of sepconv blocks.')
     parser.add_argument("--num_sepconv_filters", type = int, default = 728, help = 'Number of sepconv filters.')

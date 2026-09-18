@@ -121,7 +121,7 @@ def main():
     # raises NotImplementedError one line later. The list used to name nine more (fcn, unet,
     # nico, unet_film, effunet, ...) that were left behind when those models were dropped,
     # so the assert passed and the failure surfaced further down as a confusing error.
-    assert args.arch in ['lp', 'mlp', 'nico_film'], f'unknown architecture {args.arch}'
+    assert args.arch in ['lp', 'mlp', 'nico_film', 'upernet'], f'unknown architecture {args.arch}'
 
     # Define the model (pytorch model)
     model = Net(model_name = args.arch, in_features = args.in_features, num_outputs = args.num_outputs,
@@ -131,7 +131,8 @@ def main():
                 num_sepconv_blocks = args.num_sepconv_blocks,
                 num_sepconv_filters = args.num_sepconv_filters, long_skip = args.long_skip, only_entry = args.only_entry,
                 linear_emb = args.linear_emb, padding_mode = args.padding_mode, returns = args.returns, sigreg_lambda = args.sigreg_lambda,
-                predict = args.predict)
+                predict = args.predict,
+                upernet_channels = args.upernet_channels, upernet_pyramid = args.upernet_pyramid, upernet_levels = args.upernet_levels)
 
     # Define the Model (pytorch lightning wrapper)
     model = Model(model, lr = args.lr, step_size = args.step_size, gamma = args.gamma, 

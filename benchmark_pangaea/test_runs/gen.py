@@ -11,6 +11,13 @@ base_text = """#!/bin/bash
 
 """
 
+# The trained-run directory names in configs.txt predate `configs/encoder/dofa_optical.yaml`,
+# which was split out of `dofa.yaml` once the AGBD dataset configs gained a sar modality
+# (`dofa.yaml` takes ${dataset.bands} and so is multimodal there). Those runs were optical,
+# and their saved config.yaml pins the optical-only band list, so re-running them from
+# ckpt_dir stays optical. Only the generated script name is renamed here, to say so.
+ENCODER_ALIASES = {'dofa': 'dofa_optical'}
+
 with open('../configs.txt', 'r') as f: configs = [line.strip() for line in f if line.strip()]
 
 for config in configs :
@@ -19,6 +26,7 @@ for config in configs :
 
     parts = config.split('_')
     encoder = "_".join(parts[3 : -3])
+    encoder = ENCODER_ALIASES.get(encoder, encoder)
 
     print()
     print("Encoder: ", encoder)
@@ -31,7 +39,7 @@ for config in configs :
         f.write(command)
 
 
-working_ones = ['croma_optical', 'dofa', 'gfmswin', 'prithvi', 'remoteclip', 'satlasnet_si', 'scalemae', 'ssl4eo_moco']
+working_ones = ['croma_optical', 'dofa_optical', 'gfmswin', 'prithvi', 'remoteclip', 'satlasnet_si', 'scalemae', 'ssl4eo_moco']
 # Directory holding the generated .sh files (this script's own). Used only for the
 # printed `sbatch` hint; was previously a hardcoded path into the predecessor
 # AGBD-GFM repo. These launchers are run from the pangaea-bench fork.
