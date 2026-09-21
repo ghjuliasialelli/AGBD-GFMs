@@ -1,7 +1,6 @@
 from nico_net_film import NicoNet_FiLM
 from mlp import MLP
 from lp import LP
-from upernet import UPerNet
 
 from biomes import REF_BIOMES
 import torch.nn as nn
@@ -56,6 +55,10 @@ class Net(nn.Module):
 
         # PANGAEA's regression UPerNet, over the input feature stack (see upernet.py)
         elif self.model_name == 'upernet':
+            # Imported here, not at module scope: upernet.py (and the pangaea_decoders/ package
+            # it needs) are local-only and deliberately untracked, so a top-level import broke
+            # `from models import Net` for every arch on any checkout that lacks them.
+            from upernet import UPerNet
             self.model = UPerNet(in_features = in_features, num_outputs = num_outputs, patch_size = patch_size[0],
                                  channels = upernet_channels, pyramid = upernet_pyramid, levels = upernet_levels,
                                  returns = returns)
