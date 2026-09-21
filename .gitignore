@@ -14,7 +14,7 @@ __pycache__/
 # 100 MB per-file limit; anything above that goes to Zenodo. The only current case is
 # the 461 MB full-AGBD PANGAEA checkpoint — its run config is tracked instead.
 *.pth
-benchmark_pangaea/full/runs/**/*.log-*
+benchmark_pangaea/trainbig_runs/runs/**/*.log-*
 
 # session generator/sweep tooling (not shipped)
 _launcher_tooling/
@@ -70,3 +70,9 @@ manuscript/
 
 # uv virtual environment (uv.lock IS committed)
 .venv/
+
+experiments/generalization/eval_ablations/*
+experiments/generalization/EXTENDED.md
+model/pangaea_decoders/
+model/runs/upernet/
+model/upernet.py

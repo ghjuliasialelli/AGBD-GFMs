@@ -1,3 +1,11 @@
+# Trained-run output directory names for the FROZEN-encoder regime
+# (train_runs/frozen/ -> pangaea run.py, no `finetune`/`lora` overrides).
+#
+# One per encoder, as printed by run.py and created under $work_dir. Blank lines
+# and lines starting with '#' are ignored by the readers.
+#
+# Naming: <date>_<time>_<cfghash>_<encoder>_<decoder>_<dataset>
+
 20260302_122832_0a0410_prithvi_reg_upernet_agbdlite
 20260302_122832_1d384d_dofa_reg_upernet_agbdlite
 20260302_122832_253b10_gfmswin_reg_upernet_agbdlite

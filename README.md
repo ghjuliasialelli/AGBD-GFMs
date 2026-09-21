@@ -177,8 +177,8 @@ Which launcher maps to which experiment:
 | `model/runs/upernet/` | PANGAEA's RegUPerNet decoder (the one the GFM benchmark uses) on AEF embeddings -- see `model/upernet.py` |
 | `experiments/generalization/train_ablations/` | geographic hold-out + temporal (2019/2020) ablations |
 | `experiments/generalization/eval_ablations/` | evaluation counterparts of the above |
-| `benchmark_pangaea/train_runs/` | the 11-GFM benchmark on AGBD-Lite (runs in the fork) |
-| `benchmark_pangaea/full/` | SSL4EO-MoCo trained on full AGBD |
+| `benchmark_pangaea/train_runs/{frozen,lora}/` | the 11-GFM benchmark on AGBD-Lite, per fine-tuning regime (runs in the fork) |
+| `benchmark_pangaea/trainbig_runs/` | SSL4EO-MoCo trained on full AGBD |
 | `benchmark_pangaea/throughput/` | throughput / efficiency measurements |
 
 ### Regenerating the launchers
@@ -192,6 +192,7 @@ owns a shared template plus a per-experiment knob table; edit the generator and 
 | `model/eval/runs/gen.py` | 24 evaluation launchers |
 | `experiments/generalization/train_ablations/gen.py` | 15 ablation training launchers |
 | `experiments/generalization/eval_ablations/gen.py` | 37 ablation evaluation launchers |
+| `benchmark_pangaea/{train,test,evalbig}_runs/<regime>/gen.py` | the PANGAEA benchmark launchers, one generator per stage × regime |
 
 Each is idempotent: re-running reproduces the committed scripts exactly. Knob defaults match
 `train.py`'s argparse defaults, so a knob an experiment does not set behaves exactly as if the
@@ -223,7 +224,7 @@ table above) — up to GitHub's 100 MB per-file limit.
 
 One artifact exceeds that limit and is therefore **not** bundled:
 
-- `benchmark_pangaea/full/runs/**/checkpoint__best.pth` (461 MB) — SSL4EO-MoCo trained on
+- `benchmark_pangaea/trainbig_runs/runs/**/checkpoint__best.pth` (461 MB) — SSL4EO-MoCo trained on
   full AGBD. The run's `configs/config.yaml` *is* tracked, so the run is fully specified
   and can be reproduced from scratch.
 
@@ -260,7 +261,10 @@ AGBD-GFMs/
 │   └── tessera/                # TESSERA embedding download & statistics
 │
 ├── benchmark_pangaea/          # 11-GFM benchmark in the PANGAEA framework
-│   ├── train_runs/  test_runs/  evalbig_runs/  full/  throughput/
+│   ├── configs/                    # frozen.txt / lora.txt: trained-run dir names
+│   ├── train_runs/  test_runs/  evalbig_runs/   # each split into frozen/ and lora/
+│   ├── trainbig_runs/              # SSL4EO-MoCo on the full AGBD dataset
+│   └── throughput/
 │
 ├── model/                      # supervised SOTA + embedding heads (flat package)
 │   ├── train.py  eval.py

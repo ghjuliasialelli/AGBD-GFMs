@@ -1,3 +1,9 @@
+# Frozen-encoder regime: no `finetune` / `lora` overrides, so run.py trains the decoder
+# on top of a frozen encoder. Run directories are named <encoder>_<decoder>_<dataset>.
+
+import os
+path_script = os.path.dirname(os.path.abspath(__file__))
+
 
 base_text = """#!/bin/bash
 #SBATCH --nodes=1
@@ -32,16 +38,12 @@ for encoder in OPTICAL_ENCODERS + SAR_ENCODERS :
     print()
 
     # Write the command to a file
-    with open(f"{encoder}.sh", "w") as f:
+    with open(os.path.join(path_script, f"{encoder}.sh"), "w") as f:
         f.write(base_text)
         f.write(command)
 
 
 working_ones = ['croma_optical', 'dofa_optical', 'gfmswin', 'prithvi', 'remoteclip', 'satlasnet_si', 'scalemae', 'ssl4eo_moco', 'spectralgpt', 'terramind_optical_tiny', 'prithvi2_100m'] + SAR_ENCODERS
-# Directory holding the generated .sh files (this script's own). Used only for the
-# printed `sbatch` hint; was previously a hardcoded path into the predecessor
-# AGBD-GFM repo. These launchers are run from the pangaea-bench fork.
-import os
-path_script = os.path.dirname(os.path.abspath(__file__))
+# The printed `sbatch` hints. These launchers are run from the pangaea-bench fork.
 for encoder in working_ones:
     print(f"sbatch {path_script}/{encoder}.sh")

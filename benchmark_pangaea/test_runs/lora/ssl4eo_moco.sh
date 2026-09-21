@@ -8,4 +8,4 @@
 #SBATCH --job-name=pangaea
 #SBATCH --gpus=rtx_4090:1
 
-torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=1 pangaea/run.py --config-name=test ckpt_dir=20260302_122832_1c9a82_croma_optical_reg_upernet_agbdlite
+torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=1 pangaea/run.py --config-name=test ckpt_dir=20260918_193929_5613bf_ssl4eo_moco_lora_reg_upernet_agbdlite

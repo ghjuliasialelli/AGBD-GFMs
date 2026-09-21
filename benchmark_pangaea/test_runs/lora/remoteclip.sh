@@ -8,4 +8,4 @@
 #SBATCH --job-name=pangaea
 #SBATCH --gpus=rtx_4090:1
 
-HYDRA_FULL_ERROR=1 TQDM_DISABLE=1 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=1 pangaea/run.py --config-name=test ckpt_dir=20260323_103538_5cf898_spectralgpt_reg_upernet_agbdlite
+torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=1 pangaea/run.py --config-name=test ckpt_dir=20260918_193941_49e8ca_remoteclip_lora_reg_upernet_agbdlite

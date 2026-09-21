@@ -1,0 +1,21 @@
+# Trained-run output directory names for the LoRA regime
+# (train_runs/lora/ -> pangaea run.py with `finetune=true lora=default`).
+#
+# One per encoder, as printed by run.py and created under $work_dir. Blank lines
+# and lines starting with '#' are ignored by the readers.
+#
+# Naming: <date>_<time>_<cfghash>_<encoder>_lora_<decoder>_<dataset>
+#   run.py appends the `_lora` token itself (pangaea/run.py: `fm = f"{fm}_lora"`
+#   when a lora config group is selected), so these names carry one more field
+#   than the frozen ones. The readers strip it to recover the encoder.
+#
+
+20260918_184016_e95acf_dofa_optical_lora_reg_upernet_agbdlite
+20260918_193935_4ea870_gfmswin_lora_reg_upernet_agbdlite
+20260918_193941_49e8ca_remoteclip_lora_reg_upernet_agbdlite
+20260918_194206_848704_satlasnet_si_lora_reg_upernet_agbdlite
+20260918_193931_d36078_scalemae_lora_reg_upernet_agbdlite
+20260918_193929_5613bf_ssl4eo_moco_lora_reg_upernet_agbdlite
+20260918_194547_333d9e_terramind_optical_tiny_lora_reg_upernet_agbdlite
+20260918_194356_676307_prithvi2_100m_lora_reg_upernet_agbdlite
+20260918_203728_de59ff_dofa_joint_lora_reg_upernet_agbdlite
