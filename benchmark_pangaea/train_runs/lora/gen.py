@@ -28,12 +28,31 @@ OPTICAL_ENCODERS = ['croma_optical', 'dofa_optical', 'gfmswin', 'prithvi', 'remo
 # configs carry SAR, and would give both variants the same run-directory name.
 SAR_ENCODERS = ['croma_joint', 'terramind_tiny', 'dofa_joint']
 
+# `batch_size` is PER GPU (run.py hands cfg.batch_size to a DataLoader with a
+# DistributedSampler), so 32 means 32 on each of the two 24 GB 4090s. Under LoRA the
+# encoder is in the autograd graph -- unlike the ../frozen runs, where it ran under
+# no_grad -- and these two do not fit. Measured peak reserved for one fwd+bwd+step on a
+# 24 GB card (no DDP buckets, no dataloader, no eval, so these are lower bounds):
+#
+#            bs=32   bs=24   bs=16   bs=12   bs=8
+#   croma_joint  OOM    OOM   20.2    16.1   12.4
+#   spectralgpt  OOM    OOM   23.0    19.0   13.2
+#
+# bs=16 leaves spectralgpt 1 GB of headroom on a lower bound, which is not headroom.
+# NOTE: this gives these two a 4x smaller effective batch than the other 13 encoders.
+# Gradient accumulation would have kept the effective batch at 32; it is deliberately
+# not used here, so keep the difference in mind when comparing these two runs.
+BATCH_SIZE = {'croma_joint': 8, 'spectralgpt': 8}
+DEFAULT_BATCH_SIZE = 32
+
 import os
 path_script = os.path.dirname(os.path.abspath(__file__))
 
 for encoder in OPTICAL_ENCODERS + SAR_ENCODERS :
 
-    command = f"""torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=2 pangaea/run.py  --config-name=train  dataset=agbdlite  encoder={encoder}  decoder=reg_upernet  preprocessing=reg_resize  criterion=mse  task=regression finetune=true lora=default batch_size=32 num_workers=6 test_num_workers=6 test_batch_size=32 use_wandb=True task.trainer.eval_interval=1 task.trainer.log_interval=100 task.trainer.eval_interval=1"""
+    batch_size = BATCH_SIZE.get(encoder, DEFAULT_BATCH_SIZE)
+
+    command = f"""torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=2 pangaea/run.py  --config-name=train  dataset=agbdlite  encoder={encoder}  decoder=reg_upernet  preprocessing=reg_resize  criterion=mse  task=regression finetune=true lora=default batch_size={batch_size} num_workers=6 test_num_workers=6 test_batch_size=32 use_wandb=True task.trainer.eval_interval=1 task.trainer.log_interval=100 task.trainer.eval_interval=1"""
     print()
     print("Encoder: ", encoder)
     print(command)
