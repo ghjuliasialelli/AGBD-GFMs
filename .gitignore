@@ -73,6 +73,3 @@ manuscript/
 
 experiments/generalization/eval_ablations/*
 experiments/generalization/EXTENDED.md
-model/pangaea_decoders/
-model/runs/upernet/
-model/upernet.py

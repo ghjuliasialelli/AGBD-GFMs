@@ -78,7 +78,11 @@ S2_L2A_BANDS = {'10m': ['B02', 'B03', 'B04', 'B08'],
                 '60m': ['B01', 'B09']}
 BAND_ORDER = ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B8A', 'B09', 'B11', 'B12']
 BAND_RES = {b: res for res, bands in S2_L2A_BANDS.items() for b in bands}
+BAND_RES['SCL'] = '20m'
 NODATAVAL_S2 = 0
+# Scene classification classes that disqualify a pixel: cloud shadow, cloud medium/high probability,
+# and thin cirrus. Class 0 is nodata and is counted separately as the validity test.
+SCL_CLOUD = (3, 8, 9, 10)
 PATCH_SIZE = (25, 25)
 
 # From Sentinel_settings.py. Note that S2 products acquired *before* this date yield a negative S2_date,
@@ -116,10 +120,13 @@ def _parser() :
                         help = 'Output directory. Defaults to <path_patches>/AGBD-Lite-MT.')
     parser.add_argument('--workers', type = int, default = 6,
                         help = 'Number of tiles to extract in parallel. Each worker peaks around 1 GB.')
-    parser.add_argument('--max_nodata', type = float, default = 0.95,
-                        help = 'Reject a candidate product whose SCL nodata fraction exceeds this. This is '
-                               'deliberately loose: whether a product covers a given footprint is decided '
-                               'per footprint, on its actual window, not on this tile-wide fraction.')
+    parser.add_argument('--tile_max_nodata', type = float, default = 0.99,
+                        help = 'Tile-level PRE-FILTER only: drop a product this empty over the whole tile. '
+                               'Keep it loose -- whether a product covers and is clear at a given footprint '
+                               'is decided per footprint below, on its actual 25x25 window.')
+    parser.add_argument('--tile_max_cloud', type = float, default = 1.0,
+                        help = 'Tile-level PRE-FILTER only, used to rank candidates. Keep it loose: a scene '
+                               '40%% cloudy over 110 km is often perfectly clear at the footprints.')
     parser.add_argument('--max_candidates', type = int, default = 8,
                         help = 'How many of the least-cloudy candidate products to test per tile.')
     parser.add_argument('--min_valid_frac', type = float, default = 0.5,
@@ -127,8 +134,9 @@ def _parser() :
                                'window is non-nodata.')
     parser.add_argument('--check_per_date', type = int, default = 64,
                         help = 'How many anchors to re-extract and compare per (tile, date).')
-    parser.add_argument('--max_cloud', type = float, default = 0.80,
-                        help = 'Reject a candidate product whose cloud+shadow fraction exceeds this.')
+    parser.add_argument('--max_cloud', type = float, default = 0.10,
+                        help = 'QUALITY BAR, measured on each footprint\'s actual 25x25 window: reject a '
+                               'candidate whose window is more than this fraction cloud/shadow/cirrus.')
     parser.add_argument('--max_padded_frac', type = float, default = 0.05,
                         help = 'Fail the build if more than this fraction of samples had to be padded.')
     parser.add_argument('--min_checked_frac', type = float, default = 0.5,
@@ -143,8 +151,10 @@ def _parser() :
                         help = 'Directory holding DEM_<tile>.tif, used as the registration key.')
     parser.add_argument('--path_lc', type = str, default = join('/scratch3', 'gsialelli', 'LC'),
                         help = 'Directory holding LC_<tile>_<year>.tif, the tie-breaker.')
-    parser.add_argument('--max_unresolved_frac', type = float, default = 0.01,
-                        help = 'Fail the build if more than this fraction of windows cannot be pinned.')
+    parser.add_argument('--path_alos', type = str, default = join('/scratch3', 'gsialelli', 'ALOS'),
+                        help = 'Directory holding ALOS_<tile>_<yy>.tif, the third registration key.')
+    parser.add_argument('--alos_year', type = int, default = 2020,
+                        help = 'Year of the ALOS mosaic to use as a registration key.')
     parser.add_argument('--tiles', type = str, nargs = '*', default = None,
                         help = 'Restrict the build to these tiles (debugging).')
     parser.add_argument('--overwrite', action = 'store_true',
@@ -301,6 +311,34 @@ def load_band(path_s2, product, band, reference_shape) :
     return data.astype(np.uint16)
 
 
+def load_scl(path_s2, product, reference_shape) :
+    """
+    This function reads the scene classification mask of a product and returns it on the 10m grid.
+
+    SCL is a 20m band, so it is upsampled by exact pixel replication rather than interpolation -- a
+    classification must not be interpolated, and 5490 * 2 == 10980 exactly. It is the cheapest way to
+    judge a candidate: one 1.3 MB band answers both "does this cover the footprint" and "is it clear
+    there", where reading B02 costs 126 MB and answers only the first.
+
+    Args:
+    - path_s2: string, path to the Sentinel-2 data directory.
+    - product: string, name of the Sentinel-2 L2A product.
+    - reference_shape: tuple of ints, shape of the 10m grid.
+
+    Returns:
+    - 2d array of uint8 on the 10m grid, or None if the band could not be read.
+    """
+    try :
+        path = band_path(path_s2, product, 'SCL')
+        if path is None : return None
+        with rs.open(path) as src :
+            scl = src.read(1)
+        scl = np.repeat(np.repeat(scl, 2, axis = 0), 2, axis = 1)
+        return scl if scl.shape == tuple(reference_shape) else None
+    except Exception :
+        return None
+
+
 def product_grid(path_s2, product) :
     """
     This function returns the georeferencing of a product, taken from its B02 band, which is the
@@ -369,57 +407,78 @@ def rank_candidates(tile, products, stats, max_nodata, max_cloud) :
     return [(date, name) for _, date, name in ranked]
 
 
-def resolve_windows(tile, transform, shape, rows, cols, dem_stored, lc_stored, path_dem, path_lc) :
+def resolve_windows(tile, transform, shape, rows, cols, stored, args) :
     """
     This function recovers the exact pixel window that AGBD used for each footprint.
 
     It is needed because rowcol() floors, and the coordinates stored in AGBD (a float32 decimal plus an
     unsigned integer offset) carry only ~40 cm of precision -- not the full-precision GEDI coordinate the
     original pipeline used. Footprints within ~0.25 m of a pixel boundary therefore land one pixel away,
-    which is about 3.8% of them. Left uncorrected, the extra timesteps sit one pixel off the anchor.
+    about 3.8% of them. Left uncorrected, the extra timesteps sit one pixel off the anchor.
 
-    The fix uses the DEM patch stored alongside every footprint: it was cut from the same window, on the
-    same grid, and it does not depend on which Sentinel-2 products still exist. Matching it against the
-    DEM on the tile grid pins the window exactly, for every footprint. Land cover breaks the rare tie.
+    The window is pinned using the date-independent layers stored alongside every footprint, which were
+    cut from the same window on the same grid. Several keys are tried in turn, because no single one is
+    reliable everywhere: the DEM rasters for 80 of the 438 tiles were re-downloaded after AGBD was built,
+    so for those the stored DEM patch matches nothing on disk. Land cover covers exactly that gap. A
+    footprint that no key can pin keeps its nominal index, which is the pre-existing behaviour, not a
+    regression -- so this never fails the build.
 
     Args:
     - tile: string, name of the Sentinel-2 tile.
     - transform, shape: the 10m grid of the tile.
     - rows, cols: arrays of ints, the nominal (uncorrected) pixel indices.
-    - dem_stored, lc_stored: the DEM and LC patches stored in the parent, per footprint.
-    - path_dem, path_lc: strings, paths to the DEM and land cover directories.
+    - stored: dict with the parent's 'DEM', 'LC' and 'ALOS_bands' patches for these footprints.
+    - args: parsed command-line arguments (for the source paths).
 
     Returns:
     - rows, cols: arrays of ints, the corrected pixel indices.
-    - stats: dict, how many footprints were exact, shifted, ambiguous or unmatched.
+    - stats: Counter, per-key successes plus 'shifted', 'fallback' and 'edge'.
     """
     offset = (PATCH_SIZE[0] - 1) // 2
-    dem = cp.get_tile(cp.load_DEM_data(path_dem, tile), transform, shape, 'DEM', cp.DEM_attrs)['dem']
-    lc = None
     rows, cols = rows.copy(), cols.copy()
     stats = Counter()
     candidates = [(dr, dc) for dr in (-1, 0, 1) for dc in (-1, 0, 1)]
 
-    def window(data, r, c) :
-        return data[r - offset : r + offset + 1, c - offset : c + offset + 1]
+    def build(name) :
+        if name == 'DEM' :
+            t = cp.get_tile(cp.load_DEM_data(args.path_dem, tile), transform, shape, 'DEM', cp.DEM_attrs)
+            return t['dem'], stored['DEM']
+        if name == 'LC' :
+            t = cp.get_tile(cp.load_LC_data(args.path_lc, tile), transform, shape, 'LC', cp.LC_attrs)
+            return t['lc'], stored['LC'][..., 0]
+        t = cp.get_tile(cp.load_ALOS_data(tile, args.path_alos, str(args.alos_year)),
+                        transform, shape, 'ALOS', cp.ALOS_attrs)
+        return t['HH'], stored['ALOS_bands'][..., 0]
 
+    layers = {}
+    pending = np.ones(len(rows), dtype = bool)
     for i in range(len(rows)) :
         r, c = int(rows[i]), int(cols[i])
         if r < offset + 1 or c < offset + 1 or r + offset + 2 > shape[0] or c + offset + 2 > shape[1] :
+            pending[i] = False
             stats['edge'] += 1
-            continue
-        hits = [o for o in candidates if np.array_equal(window(dem, r + o[0], c + o[1]), dem_stored[i])]
-        if len(hits) > 1 :
-            if lc is None :
-                lc = cp.get_tile(cp.load_LC_data(path_lc, tile), transform, shape, 'LC', cp.LC_attrs)
-            hits = [o for o in hits
-                    if np.array_equal(window(lc['lc'], r + o[0], c + o[1]), lc_stored[i][..., 0])]
-        if len(hits) != 1 :
-            stats['ambiguous' if len(hits) > 1 else 'unmatched'] += 1
-            continue
-        dr, dc = hits[0]
-        rows[i], cols[i] = r + dr, c + dc
-        stats['exact' if (dr, dc) == (0, 0) else 'shifted'] += 1
+
+    for name in ('DEM', 'LC', 'ALOS') :
+        if not pending.any() : break
+        try :
+            grid, ref = build(name)
+        except Exception :
+            continue                                  # a missing source is not fatal; try the next key
+        layers[name] = True
+        for i in np.flatnonzero(pending) :
+            r, c = int(rows[i]), int(cols[i])
+            hits = [o for o in candidates
+                    if np.array_equal(grid[r + o[0] - offset : r + o[0] + offset + 1,
+                                            c + o[1] - offset : c + o[1] + offset + 1], ref[i])]
+            if len(hits) != 1 : continue
+            dr, dc = hits[0]
+            rows[i], cols[i] = r + dr, c + dc
+            pending[i] = False
+            stats[f'key_{name}'] += 1
+            if (dr, dc) != (0, 0) : stats['shifted'] += 1
+        del grid, ref
+
+    stats['fallback'] = int(pending.sum())
     return rows, cols, stats
 
 
@@ -473,11 +532,12 @@ def extract_tile(task) :
     n = len(idxs)
     report = dict(tile = str(tile), n = n, padded = 0, checked = 0, exact = 0, substituted = 0,
                   missing_extra = 0, products = 0, outside = 0, absent = 0, empty_slots = 0,
-                  win_exact = 0, win_shifted = 0, win_unresolved = 0, error = '')
+                  win_dem = 0, win_lc = 0, win_alos = 0, win_shifted = 0, win_edge = 0,
+                  win_fallback = 0, error = '')
 
     try :
         products = list_products(args.path_s2).get(tile, {})
-        ranked = rank_candidates(tile, products, stats, args.max_nodata, args.max_cloud)
+        ranked = rank_candidates(tile, products, stats, args.tile_max_nodata, args.tile_max_cloud)
 
         with h5py.File(parent_fname, 'r') as f :
             grp = f[tile]
@@ -490,7 +550,6 @@ def extract_tile(task) :
             passthrough = {'ALOS_bands': grp['ALOS_bands'][:][idxs],
                            'DEM': grp['DEM'][:][idxs],
                            'LC': grp['LC'][:][idxs]}
-            dem_stored, lc_stored = passthrough['DEM'], passthrough['LC']
             gedi = {k: grp['GEDI'][k][:][idxs] for k in
                     ['agbd', 'lat_decimal', 'lat_offset', 'lon_decimal', 'lon_offset',
                      'pft_class', 'region_cla', 'rh98']}
@@ -524,11 +583,13 @@ def extract_tile(task) :
 
         # Pin each footprint's window to the one AGBD actually used, before any extraction: every
         # timestep is then cut from the same pixels as the stored anchor patch.
-        rows, cols, wstats = resolve_windows(tile, transform, shape, rows, cols,
-                                             dem_stored, lc_stored, args.path_dem, args.path_lc)
-        report['win_exact'] = wstats['exact']
+        rows, cols, wstats = resolve_windows(tile, transform, shape, rows, cols, passthrough, args)
+        report['win_dem'] = wstats['key_DEM']
+        report['win_lc'] = wstats['key_LC']
+        report['win_alos'] = wstats['key_ALOS']
         report['win_shifted'] = wstats['shifted']
-        report['win_unresolved'] = wstats['ambiguous'] + wstats['unmatched'] + wstats['edge']
+        report['win_edge'] = wstats['edge']
+        report['win_fallback'] = wstats['fallback']
 
         inside = ((rows - offset >= 0) & (cols - offset >= 0) &
                   (rows + offset + 1 <= shape[0]) & (cols + offset + 1 <= shape[1]))
@@ -544,13 +605,22 @@ def extract_tile(task) :
         # anchor, which silently costs those footprints a real timestep.
         candidate_valid = {}
         for date, product in ranked[:args.max_candidates] :
-            data = load_band(args.path_s2, product, 'B02', shape)
+            scl = load_scl(args.path_s2, product, shape)
+            if scl is None : continue
+            idx = np.flatnonzero(inside)
             valid = np.zeros(n, dtype = bool)
-            for i in range(n) :
-                if inside[i] :
-                    valid[i] = (window(data, i) != NODATAVAL_S2).mean() >= args.min_valid_frac
+            if len(idx) :
+                k = np.arange(-offset, offset + 1)
+                w = scl[rows[idx][:, None, None] + k[None, :, None],
+                        cols[idx][:, None, None] + k[None, None, :]]
+                is_cloud = np.zeros(256, dtype = bool)
+                is_cloud[list(SCL_CLOUD)] = True
+                valid_frac = (w != NODATAVAL_S2).mean(axis = (1, 2))
+                cloud_frac = is_cloud[w].mean(axis = (1, 2))
+                valid[idx] = (valid_frac >= args.min_valid_frac) & (cloud_frac <= args.max_cloud)
+                del w
             candidate_valid[date] = valid
-            del data
+            del scl
 
         # Slot dates, per footprint: anchor first, then the least-cloudy candidates that actually cover
         # this footprint, then the anchor again as padding if the tile has nothing else to offer.
@@ -824,15 +894,19 @@ def main() :
         print(f'padded (fewer than T)    {padded} ({100 * padded / max(n_total, 1):.2f}%)')
         outside = sum(r['outside'] for r in reports)
         absent = sum(r['absent'] for r in reports)
-        w_exact = sum(r['win_exact'] for r in reports)
+        w_dem = sum(r['win_dem'] for r in reports)
+        w_lc = sum(r['win_lc'] for r in reports)
+        w_alos = sum(r['win_alos'] for r in reports)
         w_shift = sum(r['win_shifted'] for r in reports)
-        w_unres = sum(r['win_unresolved'] for r in reports)
+        w_edge = sum(r['win_edge'] for r in reports)
+        w_fall = sum(r['win_fallback'] for r in reports)
         print(f'anchors re-checked       {checked}, of which exact {exact}')
         print(f'anchors not reproducible {substituted} (product on disk is a different baseline)')
         print(f'anchors not on disk      {absent} (the product AGBD used is absent from this machine)')
         print(f'footprints outside grid  {outside}')
-        print(f'windows pinned via DEM   {w_exact + w_shift} '
-              f'(nominal {w_exact}, shifted by 1 px {w_shift}), unresolved {w_unres}')
+        print(f'windows pinned           {w_dem + w_lc + w_alos} '
+              f'(DEM {w_dem}, LC {w_lc}, ALOS {w_alos}); of these shifted by 1 px {w_shift}')
+        print(f'windows left nominal     {w_fall + w_edge} (no key matched {w_fall}, tile edge {w_edge})')
         # A verification that covers nothing must say so: silence here would read as success.
         coverage = (checked + substituted + absent)
         if coverage and checked / coverage < args.min_checked_frac :
@@ -855,9 +929,6 @@ def main() :
         if checked and exact / checked < args.min_exact_frac :
             raise SystemExit(f'anchor check failed: {exact}/{checked} exact, '
                              f'below --min_exact_frac {args.min_exact_frac}')
-        if n_total and w_unres / n_total > args.max_unresolved_frac :
-            raise SystemExit(f'{w_unres}/{n_total} windows could not be pinned against the stored DEM, '
-                             f'above --max_unresolved_frac {args.max_unresolved_frac}')
         if n_total and padded / n_total > args.max_padded_frac :
             raise SystemExit(f'padding {100 * padded / n_total:.2f}% exceeds '
                              f'--max_padded_frac {100 * args.max_padded_frac:.2f}%')

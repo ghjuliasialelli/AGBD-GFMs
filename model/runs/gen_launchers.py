@@ -352,6 +352,38 @@ SPECS = {
         },
         'sbatch': {},
     },
+    'model/runs/upernet/aef_lite.sh': {
+        # The same run as model/runs/upernet/aef.sh, on AGBD-Lite. This is the one that is
+        # comparable to benchmark_pangaea/train_runs/: those train all 11 encoders with
+        # `dataset=agbdlite decoder=reg_upernet`, so matching the decoder is only half of
+        # it -- the training set has to match too (371,849 Lite samples vs 9,949,032 in
+        # full AGBD). model/runs/nico/aef_lite.sh is the same-data, same-inputs NicoNet
+        # baseline, so the pair isolates the decoder.
+        # Differs from upernet/aef.sh by the same two knobs that separate nico/aef_lite.sh
+        # from nico/aef.sh: lite, and drop_overlaps (the AEF-overlap filter applies to the
+        # full-AGBD test split only).
+        'knobs': {
+            'aef': '"true"',
+            'alos': '"false"',
+            'arch': '"upernet"',
+            'aspect': '"false"',
+            'bands': '() #(B02 B03 B04 B08) #(B01 B02 B03 B04 B05 B06 B07 B08 B8A B09 B11 B12)',
+            'dem': '"false"',
+            'drop_overlaps': '"false" # drop AGBD test patches that overlap with the AEF train set',
+            'ft_cat2vec': '"false"',
+            'latlon': '"false"',
+            'lc': '"false"',
+            'lite': '"true"',
+            'lr': '0.0001',
+            'predict': '"agbd" # agbd or rh98 or biome',
+            's2_dates': '"false"',
+            's2_day': '"false"',
+            's2_doy': '"false"',
+            'slope': '"false"',
+            'topo': '"false"',
+        },
+        'sbatch': {},
+    },
     'model/runs/nico/aef.sh': {
         'knobs': {
             'aef': '"true"',
