@@ -1,0 +1,13 @@
+# Trained-run output directory names for the MULTI-TEMPORAL LoRA regime
+# (train_runs/mt_lora/ -> pangaea run.py with `dataset=agbdlite-mt finetune=true lora=default`).
+#
+# One per encoder, as printed by run.py and created under $work_dir. Blank lines
+# and '#' comments are skipped by test_runs/mt_lora/gen.py.
+#
+# Expected names look like:
+#   <date>_<time>_<hash>_prithvi_lora_reg_upernet_agbdlitemt
+#   <date>_<time>_<hash>_prithvi2_100m_lora_reg_upernet_agbdlitemt
+#   <date>_<time>_<hash>_satlasnet_mi_lora_reg_upernet_agbdlitemt
+#
+# Fill these in once the three training runs finish, then run:
+#   python test_runs/mt_lora/gen.py
