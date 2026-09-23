@@ -73,3 +73,5 @@ manuscript/
 
 experiments/generalization/eval_ablations/*
 experiments/generalization/EXTENDED.md
+
+technical_details/from_manuscript.md
