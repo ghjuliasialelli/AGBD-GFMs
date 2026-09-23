@@ -2,11 +2,11 @@
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=120:00:00
-#SBATCH --output=/cluster/scratch/gsialelli/logs/training-%A.txt
-#SBATCH --error=/cluster/scratch/gsialelli/logs/training-%A.txt
+#SBATCH --output=/cluster/scratch/gsialelli/logs/training-%A-%a.txt
+#SBATCH --error=/cluster/scratch/gsialelli/logs/training-%A-%a.txt
 #SBATCH --mem-per-cpu=8G
 #SBATCH --job-name=models
-#SBATCH --array=1-1
+#SBATCH --array=1-3
 #SBATCH --gpus=rtx_4090:1
 
 # --- AGBD-GFMs config ----------------------------------------------------------
