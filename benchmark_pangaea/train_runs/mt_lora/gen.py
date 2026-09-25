@@ -35,6 +35,15 @@ base_text = """#!/bin/bash
 # squeezes the temporal axis away, so running it here would silently train on one date.
 ENCODERS = ['prithvi', 'prithvi2_100m', 'satlasnet_mi']
 
+# Taking a temporal axis IN is not the same as merging it: what matters to the decoder is
+# what the encoder hands OUT (`multi_temporal_output`).
+#   prithvi / prithvi2_100m  return (B, C, T, H, W) -> need an MT decoder to collapse T.
+#                            Plain reg_upernet dies on the 5D tensor at the neck's
+#                            ConvTranspose2d. L-TAE, as in PANGAEA's multi-temporal examples.
+#   satlasnet_mi             max-pools over T inside the encoder -> 4D out -> reg_upernet.
+DECODER = {'prithvi': 'reg_upernet_mt_ltae', 'prithvi2_100m': 'reg_upernet_mt_ltae',
+           'satlasnet_mi': 'reg_upernet'}
+
 # `batch_size` is PER GPU. These are NOT measured -- unlike the numbers in ../lora/gen.py,
 # which were. Three timesteps put roughly 3x the activations through the encoder, and
 # under LoRA the encoder is in the autograd graph, so the single-temporal batch of 32 is
@@ -46,8 +55,9 @@ DEFAULT_BATCH_SIZE = 12
 for encoder in ENCODERS :
 
     batch_size = BATCH_SIZE.get(encoder, DEFAULT_BATCH_SIZE)
+    decoder = DECODER[encoder]
 
-    command = f"""torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=2 pangaea/run.py  --config-name=train  dataset=agbdlite-mt  encoder={encoder}  decoder=reg_upernet  preprocessing=reg_resize  criterion=mse  task=regression finetune=true lora=default batch_size={batch_size} num_workers=6 test_num_workers=6 test_batch_size={batch_size} use_wandb=True task.trainer.eval_interval=1 task.trainer.log_interval=100 task.trainer.eval_interval=1"""
+    command = f"""torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=2 pangaea/run.py  --config-name=train  dataset=agbdlite-mt  encoder={encoder}  decoder={decoder}  preprocessing=reg_resize  criterion=mse  task=regression finetune=true lora=default batch_size={batch_size} num_workers=6 test_num_workers=6 test_batch_size={batch_size} use_wandb=True task.trainer.eval_interval=1 task.trainer.log_interval=100 task.trainer.eval_interval=1"""
     print()
     print("Encoder: ", encoder)
     print(command)

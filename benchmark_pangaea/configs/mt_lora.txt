@@ -5,9 +5,9 @@
 # and '#' comments are skipped by test_runs/mt_lora/gen.py.
 #
 # Expected names look like:
-#   <date>_<time>_<hash>_prithvi_lora_reg_upernet_agbdlitemt
-#   <date>_<time>_<hash>_prithvi2_100m_lora_reg_upernet_agbdlitemt
-#   <date>_<time>_<hash>_satlasnet_mi_lora_reg_upernet_agbdlitemt
+#   <date>_<time>_<hash>_prithvi_lora_reg_upernet_mt_ltae_agbdlite-mt
+#   <date>_<time>_<hash>_prithvi2_100m_lora_reg_upernet_mt_ltae_agbdlite-mt
+#   <date>_<time>_<hash>_satlasnet_mi_lora_reg_upernet_agbdlite-mt
 #
 # Fill these in once the three training runs finish, then run:
 #   python test_runs/mt_lora/gen.py
