@@ -11,10 +11,13 @@ __pycache__/
 *.py[cod]
 
 # large model artifacts. Weights and cached predictions ARE tracked, up to GitHub's
-# 100 MB per-file limit; anything above that goes to Zenodo. The only current case is
-# the 461 MB full-AGBD PANGAEA checkpoint — its run config is tracked instead.
+# 100 MB per-file limit; anything above that goes to Zenodo.
 *.pth
-benchmark_pangaea/trainbig_runs/runs/**/*.log-*
+
+# The full-AGBD PANGAEA run output (461 MB checkpoint + config + logs), local only. Read by
+# model/inference_ssl4eo.py and model/extract_features_ssl4eo.py; the launchers that
+# produced it are benchmark_pangaea/trainfull_runs/frozen/ssl4eo_moco.sh.
+benchmark_pangaea/checkpoints/
 
 # session generator/sweep tooling (not shipped)
 _launcher_tooling/

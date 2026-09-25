@@ -92,7 +92,7 @@ from omegaconf import OmegaConf
 ###################################################################################################
 # Configuration
 
-DEFAULT_RUN = ('/scratch3/gsialelli/AGBD-GFMs/benchmark_pangaea/full/runs/'
+DEFAULT_RUN = ('/scratch3/gsialelli/AGBD-GFMs/benchmark_pangaea/checkpoints/'
                '20260316_155017_36a16f_ssl4eo_moco_reg_upernet_agbd')
 
 PATCH = 25        # the AGBD patch size the model was trained on; dataset.img_size in the config

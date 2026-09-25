@@ -1,0 +1,13 @@
+# Trained-run output directory names for FULL-on-FULL, frozen-encoder regime
+# (trainfull_runs/frozen/ -> pangaea run.py with dataset=agbd, no `finetune`/`lora`).
+#
+# Read by testfull_runs/frozen/gen.py. Blank lines and '#' lines are ignored.
+#
+# Naming: <date>_<time>_<cfghash>_<encoder>_<decoder>_agbd
+#   The dataset token is `agbd` (full), NOT `agbdlite` -- a name ending in
+#   `_agbdlite` does not belong here: that model was trained on AGBD-Lite, and
+#   testing it on AGBD-test is evalbig_runs/, not this.
+#
+# The checkpoint for this run is kept in ../checkpoints/<run>/.
+
+20260316_155017_36a16f_ssl4eo_moco_reg_upernet_agbd

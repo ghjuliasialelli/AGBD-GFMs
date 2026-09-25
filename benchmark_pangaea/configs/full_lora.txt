@@ -1,0 +1,16 @@
+# Trained-run output directory names for FULL-on-FULL, LoRA regime
+# (trainfull_runs/lora/ -> pangaea run.py with dataset=agbd finetune=true lora=default).
+#
+# Read by testfull_runs/lora/gen.py. Blank lines and '#' lines are ignored.
+#
+# Naming: <date>_<time>_<cfghash>_<encoder>_lora_<decoder>_agbd
+#   The dataset token is `agbd` (full), NOT `agbdlite` -- a name ending in
+#   `_agbdlite` does not belong here: that model was trained on AGBD-Lite, and
+#   testing it on AGBD-test is evalbig_runs/, not this.
+#
+# Only croma_joint is scaled up to full AGBD. Its AGBD-Lite counterpart (same
+# encoder, same LoRA config, same batch size) is
+#   20260922_021131_c999d4_croma_joint_lora_reg_upernet_agbdlite   (configs/lora.txt)
+# Add the full-AGBD run name below once trainfull_runs/lora/croma_joint.sh has
+# produced it.
+
