@@ -45,26 +45,36 @@ SAR_ENCODERS = ['croma_joint', 'terramind_tiny', 'dofa_joint']
 BATCH_SIZE = {'croma_joint': 8, 'spectralgpt': 8}
 DEFAULT_BATCH_SIZE = 32
 
+# Native-GSD variants: preprocessing=reg_pad pads the 25x25 px (10 m) chip up to the
+# encoder's input size (reflect padding; the target is padded with ignore_index, so only the
+# GEDI centre pixel is supervised) instead of reg_resize's bilinear stretch to ~1.1 m/px.
+# run.py tags these runs `<encoder>_pad_lora_...`, and their launcher is `<encoder>_pad.sh`.
+PAD_ENCODERS = ['terramind_tiny']
+
 import os
 path_script = os.path.dirname(os.path.abspath(__file__))
 
-for encoder in OPTICAL_ENCODERS + SAR_ENCODERS :
+RUNS = [(encoder, 'reg_resize') for encoder in OPTICAL_ENCODERS + SAR_ENCODERS] + \
+       [(encoder, 'reg_pad') for encoder in PAD_ENCODERS]
 
+for encoder, preprocessing in RUNS:
+
+    name = f"{encoder}_pad" if preprocessing == 'reg_pad' else encoder
     batch_size = BATCH_SIZE.get(encoder, DEFAULT_BATCH_SIZE)
 
-    command = f"""torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=2 pangaea/run.py  --config-name=train  dataset=agbdlite  encoder={encoder}  decoder=reg_upernet  preprocessing=reg_resize  criterion=mse  task=regression finetune=true lora=default batch_size={batch_size} num_workers=6 test_num_workers=6 test_batch_size=32 use_wandb=True task.trainer.eval_interval=1 task.trainer.log_interval=100 task.trainer.eval_interval=1"""
+    command = f"""torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=2 pangaea/run.py  --config-name=train  dataset=agbdlite  encoder={encoder}  decoder=reg_upernet  preprocessing={preprocessing}  criterion=mse  task=regression finetune=true lora=default batch_size={batch_size} num_workers=6 test_num_workers=6 test_batch_size=32 use_wandb=True task.trainer.eval_interval=1 task.trainer.log_interval=100 task.trainer.eval_interval=1"""
     print()
-    print("Encoder: ", encoder)
+    print("Encoder: ", name)
     print(command)
     print()
 
     # Write the command to a file
-    with open(os.path.join(path_script, f"{encoder}.sh"), "w") as f:
+    with open(os.path.join(path_script, f"{name}.sh"), "w") as f:
         f.write(base_text)
         f.write(command)
 
 
-working_ones = ['croma_optical', 'dofa_optical', 'gfmswin', 'prithvi', 'remoteclip', 'satlasnet_si', 'scalemae', 'ssl4eo_moco', 'spectralgpt', 'terramind_optical_tiny', 'prithvi2_100m'] + SAR_ENCODERS
+working_ones = ['croma_optical', 'dofa_optical', 'gfmswin', 'prithvi', 'remoteclip', 'satlasnet_si', 'scalemae', 'ssl4eo_moco', 'spectralgpt', 'terramind_optical_tiny', 'prithvi2_100m'] + SAR_ENCODERS + [f"{e}_pad" for e in PAD_ENCODERS]
 # The printed `sbatch` hints. These launchers are run from the pangaea-bench fork.
 for encoder in working_ones:
     print(f"sbatch {path_script}/{encoder}.sh")
