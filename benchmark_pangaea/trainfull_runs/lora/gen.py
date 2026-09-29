@@ -50,12 +50,14 @@ cp /cluster/work/igp_psr/gsialelli/AGBD-GFM/aef-dwn/AEF_overlaps.pkl ${TMPDIR}
 # Per-regime run.py overrides and the encoders scaled up to full AGBD.
 REGIMES = {
     'frozen': {'overrides': '', 'encoders': ['ssl4eo_moco']},
-    'lora':   {'overrides': 'finetune=true lora=default ', 'encoders': ['croma_joint']},
+    'lora':   {'overrides': 'finetune=true lora=default ', 'encoders': ['croma_joint', 'terramind_tiny']},
 }
 
 # `batch_size` is PER GPU. croma_joint under LoRA OOMs above bs=8 on a 24 GB 4090 -- see
 # the measurements in ../../train_runs/lora/gen.py. Kept identical to its AGBD-Lite run
 # (20260922_021131_c999d4_croma_joint_lora_reg_upernet_agbdlite) so the two are comparable.
+# terramind_tiny ran its AGBD-Lite LoRA run at the default bs=32
+# (20260922_172445_017c55_terramind_tiny_lora_reg_upernet_agbdlite), so it takes the default.
 BATCH_SIZE = {'lora': {'croma_joint': 8}}
 DEFAULT_BATCH_SIZE = 32
 
