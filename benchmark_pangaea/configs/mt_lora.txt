@@ -11,3 +11,7 @@
 #
 # Fill these in once the three training runs finish, then run:
 #   python test_runs/mt_lora/gen.py
+
+20260928_102017_483020_prithvi_lora_reg_upernet_mt_ltae_agbdlite-mt
+20260928_102637_89ba33_prithvi2_100m_lora_reg_upernet_mt_ltae_agbdlite-mt
+20260928_102637_417c4d_satlasnet_mi_lora_reg_upernet_agbdlite-mt
