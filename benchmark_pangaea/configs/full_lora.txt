@@ -8,9 +8,10 @@
 #   `_agbdlite` does not belong here: that model was trained on AGBD-Lite, and
 #   testing it on AGBD-test is evalbig_runs/, not this.
 #
-# Only croma_joint is scaled up to full AGBD. Its AGBD-Lite counterpart (same
+# Only terramind_tiny is scaled up to full AGBD. Its AGBD-Lite counterpart (same
 # encoder, same LoRA config, same batch size) is
-#   20260922_021131_c999d4_croma_joint_lora_reg_upernet_agbdlite   (configs/lora.txt)
-# Add the full-AGBD run name below once trainfull_runs/lora/croma_joint.sh has
+#   20260922_172445_017c55_terramind_tiny_lora_reg_upernet_agbdlite   (configs/lora.txt)
+# Add the full-AGBD run name below once trainfull_runs/lora/terramind_tiny.sh has
 # produced it.
 
+20260930_080105_f8cb5c_terramind_tiny_lora_reg_upernet_agbd
