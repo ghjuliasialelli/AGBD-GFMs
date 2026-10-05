@@ -48,7 +48,7 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
 
 # === Paths (match comparison.py) ===
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).resolve().parent.parent / "comparison" / "agbref"
 CACHE_PATH = BASE_DIR / "results" / "comparison_results.npz"
 AGBREF_PATH = BASE_DIR / "data" / "AGBRef.geojson"
 PLOTS_GEOJSON = BASE_DIR / "data" / "example_plots_s2.geojson"
@@ -533,7 +533,7 @@ def main(plots, out_path, dpi):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--plots", type=int, nargs="+", default=DEFAULT_PLOTS)
-    ap.add_argument("--out", type=str, default=str(BASE_DIR / "plots" / "plot_maps_AEF_vs_CCI_vs_AGBRef"))
+    ap.add_argument("--out", type=str, default=str(Path(__file__).resolve().parent / "img" / "plot_maps_AEF_vs_CCI_vs_AGBRef"))
     ap.add_argument("--dpi", type=int, default=300)
     args = ap.parse_args()
     main(args.plots, args.out, args.dpi)

@@ -7,7 +7,7 @@ Two inputs are not in the repo:
 
 - **ESA CCI biomass** — per-S2-tile rasters (`CCI_<tile>_19.tif`, ~100 m, EPSG:4326), pointed
   to by `CCI_DIR` in `comparison.py`.
-- **The 5 Sentinel-2 true-colour tiles** `make_plot_maps.py` draws on — see below.
+- **The 5 Sentinel-2 true-colour tiles** `plotting/make_plot_maps.py` draws on — see below.
 
 The AGBRef data itself (`AGBRef.geojson`, `AGBref.gpkg`, the `.Rdata`) *is* tracked, under
 `data/`.
@@ -15,7 +15,7 @@ The AGBRef data itself (`AGBRef.geojson`, `AGBref.gpkg`, the `.Rdata`) *is* trac
 
 ## Sentinel-2 tiles for the AGBRef figure
 
-`make_plot_maps.py` renders a Sentinel-2 true-colour column alongside the biomass maps. The
+`plotting/make_plot_maps.py` renders a Sentinel-2 true-colour column alongside the biomass maps. The
 tiles are ~130 MB each, so they are **not** in the repo — put them in `data/s2_tci/` and the
 script picks them up automatically. These 5 are exactly the scenes the published figure draws,
 one per plot in `DEFAULT_PLOTS`. All are Level-2A TCI (`B04/B03/B02`, pre-composited 8-bit,

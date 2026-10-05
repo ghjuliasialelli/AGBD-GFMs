@@ -108,7 +108,7 @@ comes from:
 | **AEF** (AlphaEarth Foundations) | [`source.coop/tge-labs/aef`](https://source.coop/tge-labs/aef). Fetch with `data/aef/download.py`, then build patches with `data/aef/create_patches.py`. | all AEF experiments |
 | **TESSERA** | [`ucam-eo/geotessera`](https://github.com/ucam-eo/geotessera). Built from the AGBD-Lite `.h5` by `data/tessera/download.py`. | all TESSERA experiments |
 | **ESA CCI biomass** | ESA CCI Biomass, per-S2-tile rasters (`CCI_<tile>_19.tif`, ~100 m, EPSG:4326), pointed to by `CCI_DIR` in `comparison/agbref/comparison.py`. | `comparison/agbref/` only |
-| **AGBRef** | in-repo: `comparison/agbref/data/` (`AGBRef.geojson`, `AGBref.gpkg`, the `.Rdata`). **Not** included: the 5 Sentinel-2 true-colour tiles `make_plot_maps.py` draws on — see [`comparison/agbref/README.md`](comparison/agbref/README.md) for the exact scenes and where to get them. | `comparison/agbref/` only |
+| **AGBRef** | in-repo: `comparison/agbref/data/` (`AGBRef.geojson`, `AGBref.gpkg`, the `.Rdata`). **Not** included: the 5 Sentinel-2 true-colour tiles `plotting/make_plot_maps.py` draws on — see [`comparison/agbref/README.md`](comparison/agbref/README.md) for the exact scenes and where to get them. | `comparison/agbref/` only |
 
 Dataset statistics (`AGBD-Lite-statistics.pkl`, `AGBD_statistics_2019-2020_global.pkl`,
 `statistics_subset_2019-2020-v4*.pkl`) ship with the datasets above, and can also be
@@ -283,12 +283,18 @@ AGBD-GFMs/
 │   └── generalization/        # geographical + temporal ablation launchers
 │       ├── train_ablations/   eval_ablations/
 │
-├── comparison/                 # paper figure scripts (each writes into its own plots/)
+├── comparison/                 # analyses behind the paper figures (plotting lives in plotting/)
 │   ├── agbref/                # AGBRef + ESA CCI biomass-map comparison (see its README)
-│   └── maps/                  # prediction-map + feature-PCA figures, GEDI per-tile metrics
-│       ├── make_map_figure.py  make_feature_figure.py
-│       ├── gedi_gpkg_tile_metrics.py  tile_metrics.py  gedi_scatter.py
-│       └── features/  plots/  # cached crops + rendered figures
+│   └── maps/                  # GEDI per-tile metrics + cached feature crops
+│       ├── gedi_gpkg_tile_metrics.py  tile_metrics.py
+│       └── features/          # cached crops read by plotting/make_feature_figure.py
+│
+├── plotting/                  # every figure script; each writes into plotting/img/
+│   ├── make_map_figure.py  make_feature_figure.py  gedi_scatter.py  preview_ssl4eo.py
+│   ├── make_plot_maps.py  regen_agbref_fig.py      # AGBRef figures (inputs in comparison/agbref/)
+│   ├── fig_benchmark.py  fig_cost.py  fig_r2.py  plot_throughput.py
+│   ├── plot_density.py  plot_binned_models.py
+│   └── img/                   # rendered figures
 │
 └── tools/
     └── check_flags.py         # launcher flag consistency check

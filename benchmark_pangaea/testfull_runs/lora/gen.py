@@ -22,6 +22,13 @@ configs_file = os.path.join(path_script, '..', '..', 'configs', f'full_{REGIME}.
 # Where the full AGBD data lives for the test job (no $TMPDIR staging here).
 ROOT_PATH_CLUSTER = '/cluster/scratch/gsialelli'
 
+# Every launcher also dumps the per-sample centre-pixel (prediction, label) pairs of the test set to
+# <DUMP_DIR>/<run>_agbd_test.h5, via AGBD_DUMP_H5 (pangaea/engine/evaluator.py, commit cbce724 on
+# agbd-release), for the binned / density analyses in plotting/. With 4 ranks, DistributedSampler pads
+# the 2,807,977 test samples to a multiple of 4, so the file holds 3 duplicated samples; the sampler also
+# shuffles, so the order differs from the fcn_film result files.
+DUMP_DIR = '/cluster/scratch/gsialelli/agbd_dumps'
+
 base_text = """#!/bin/bash
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=24
@@ -85,7 +92,7 @@ if not_full:
 encoders = []
 for config in configs:
 
-    command = f"""HYDRA_FULL_ERROR=1 TQDM_DISABLE=1 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=4 pangaea/run.py --config-name=test ckpt_dir={config}
+    command = f"""AGBD_DUMP_H5={DUMP_DIR}/{config}_agbd_test.h5 HYDRA_FULL_ERROR=1 TQDM_DISABLE=1 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=4 pangaea/run.py --config-name=test ckpt_dir={config}
 """
 
     encoder = encoder_of(config)

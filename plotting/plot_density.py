@@ -28,7 +28,7 @@ Display options (with none of them, the script draws the earlier per-model 2D-hi
                     the column-normalised histograms; panel I is shown as usual.
   --style binned    instead of a 2D histogram, plot the mean prediction per 25 Mg/ha reference bin with
                     +-1 std error bars and marker size by bin count, as in the bottom row of
-                    manuscript/imgs/agbref.png (comparison/agbref/regen_agbref_fig.py).
+                    manuscript/imgs/agbref.png (plotting/regen_agbref_fig.py).
   --overlay         with --style binned: all models in a single panel, coloured, slightly offset in x.
 
 """
@@ -65,6 +65,11 @@ def parse_arguments():
                         help='density: 2D histogram; binned: mean +- std per reference bin (agbref.png style).')
     parser.add_argument('--bin_width', type=float, default=25.0, help='Reference-bin width (Mg/ha) for --style binned.')
     parser.add_argument('--overlay', action='store_true', help='With --style binned: all models in one panel.')
+    parser.add_argument('--y', choices=['pred', 'residual', 'diff'], default='pred',
+                        help='With --lines. pred: median prediction per bin; residual: median (pred - ref) per bin; '
+                             'diff: median of model 2 minus median of model 1 per bin, with a paired bootstrap 95%% CI '
+                             '(needs exactly 2 models scored on the same samples).')
+    parser.add_argument('--n_boot', type=int, default=200, help='Bootstrap resamples for --y diff.')
     parser.add_argument('--lines', action='store_true',
                         help='With --overlay: median line + shaded interquartile band per model, no error bars.')
     parser.add_argument('--box_fontsize', type=float, default=15, help='Font size of the metrics box.')
@@ -76,7 +81,7 @@ def parse_arguments():
             parser.error(f'--model needs PATH and TITLE, got {spec}')
         models.append({'path': spec[0], 'title': ' '.join(spec[1:])})
     return models, args.max_agb, args.bins, args.out, args.dpi, args.norm, args.quantiles, args.q_width, \
-           args.diff_vs, args.box_fontsize, args.style, args.bin_width, args.overlay, args.lines
+           args.diff_vs, args.box_fontsize, args.style, args.bin_width, args.overlay, args.lines, args.y, args.n_boot
 
 
 def load(path):
@@ -146,7 +151,36 @@ def metrics_box(ax, stats_, fontsize, **pos):
             bbox=dict(boxstyle='round,pad=0.6', facecolor='wheat', alpha=0.9, edgecolor='0.6'))
 
 
-def plot_binned(models, max_agb, width, overlay, box_fs, out_path, dpi, lines=False):
+def plot_median_diff(ax, models, edges, n_boot, box_fs, seed=0):
+    # Median of model 2 minus median of model 1 per reference bin, with a paired bootstrap 95% CI: both
+    # models are resampled with the same indices, which requires them to be scored on the same samples.
+    if len(models) != 2:
+        raise SystemExit('--y diff needs exactly 2 models')
+    a, b = models
+    if not np.array_equal(a['labels'], b['labels']):
+        raise SystemExit('--y diff needs both models scored on the same samples in the same order')
+    rng = np.random.default_rng(seed)
+    centres, d, lo, hi = [], [], [], []
+    for l0, l1 in zip(edges[:-1], edges[1:]):
+        sel = np.flatnonzero((a['labels'] >= l0) & (a['labels'] < l1))
+        if sel.size < 50: continue
+        pa, pb = a['preds'][sel], b['preds'][sel]
+        boot = np.empty(n_boot)
+        for i in range(n_boot):
+            idx = rng.integers(0, sel.size, sel.size)
+            boot[i] = np.median(pb[idx]) - np.median(pa[idx])
+        centres.append((l0 + l1) / 2); d.append(np.median(pb) - np.median(pa))
+        lo.append(np.percentile(boot, 2.5)); hi.append(np.percentile(boot, 97.5))
+        print(f'  {l0:4.0f}-{l1:4.0f}: diff={d[-1]:+6.2f}  95% CI [{lo[-1]:+6.2f}, {hi[-1]:+6.2f}]  n={sel.size:,}')
+    col = OVERLAY_COLORS[1]
+    ax.fill_between(centres, lo, hi, color=col, alpha=0.3, linewidth=0, label='95% bootstrap CI')
+    ax.plot(centres, d, color=col, linewidth=2.6, marker='o', markersize=4.5, label='difference of medians')
+    ax.axhline(0, color='k', linestyle='--', linewidth=1, alpha=0.5, label='no difference')
+    ax.set_ylabel(f"{b['title']} $-$ {a['title']}, median prediction [Mg/ha]")
+    ax.legend(loc='upper left', fontsize=box_fs * 0.72, framealpha=0.95)
+
+
+def plot_binned(models, max_agb, width, overlay, box_fs, out_path, dpi, lines=False, y_mode='pred', n_boot=200):
     plt.rcParams.update({'font.size': 15})
     for m in models:
         m['b'] = binned_mean_std(m['preds'], m['labels'], max_agb, width)
@@ -165,17 +199,28 @@ def plot_binned(models, max_agb, width, overlay, box_fs, out_path, dpi, lines=Fa
         hax.grid(True, axis='y', color='0.9', linewidth=0.8); hax.set_axisbelow(True)
         for sp in ('top', 'right'): hax.spines[sp].set_visible(False)
         print('  reference samples per bin:', counts.tolist())
-        for m, col in zip(models, OVERLAY_COLORS):
-            c, q = conditional_quantiles(m['preds'], m['labels'], max_agb, width, pcts=[25, 50, 75])
-            ax.fill_between(c, q[:, 0], q[:, 2], color=col, alpha=0.18, linewidth=0)
-            ax.plot(c, q[:, 1], color=col, linewidth=2.6, marker='o', markersize=4.5,
-                    label=f"{m['title']}  (RMSE={m['stats'][2]:.1f}, R$^2$={m['stats'][1]:.3f})")
-        ax.plot([0, max_agb], [0, max_agb], 'k--', linewidth=1, alpha=0.5, label='1:1')
-        ax.set_xlim(0, max_agb); ax.set_ylim(0, max_agb); ax.set_box_aspect(1)
-        ax.set_xlabel('GEDI reference AGBD [Mg/ha]'); ax.set_ylabel('Predicted AGB [Mg/ha]')
+        if y_mode == 'diff':
+            plot_median_diff(ax, models, edges, n_boot, box_fs)
+        else:
+            for m, col in zip(models, OVERLAY_COLORS):
+                y = m['preds'] - m['labels'] if y_mode == 'residual' else m['preds']
+                c, q = conditional_quantiles(y, m['labels'], max_agb, width, pcts=[25, 50, 75])
+                ax.fill_between(c, q[:, 0], q[:, 2], color=col, alpha=0.18, linewidth=0)
+                ax.plot(c, q[:, 1], color=col, linewidth=2.6, marker='o', markersize=4.5,
+                        label=f"{m['title']}  (RMSE={m['stats'][2]:.1f}, R$^2$={m['stats'][1]:.3f})")
+            if y_mode == 'residual':
+                ax.axhline(0, color='k', linestyle='--', linewidth=1, alpha=0.5, label='no bias')
+                ax.set_ylabel('Prediction $-$ reference [Mg/ha]')
+                loc = 'lower left'
+            else:
+                ax.plot([0, max_agb], [0, max_agb], 'k--', linewidth=1, alpha=0.5, label='1:1')
+                ax.set_ylim(0, max_agb); ax.set_ylabel('Predicted AGB [Mg/ha]')
+                loc = 'upper left'
+            ax.legend(loc=loc, fontsize=box_fs * 0.72, framealpha=0.95,
+                      title='median, shaded: 25th–75th pct.', title_fontsize=box_fs * 0.62)
+        ax.set_xlim(0, max_agb); ax.set_box_aspect(1)
+        ax.set_xlabel('GEDI reference AGBD [Mg/ha]')
         ax.grid(True, color='0.9', linewidth=0.8); ax.set_axisbelow(True)
-        ax.legend(loc='upper left', fontsize=box_fs * 0.72, framealpha=0.95,
-                  title='median, shaded: 25th–75th pct.', title_fontsize=box_fs * 0.62)
         makedirs(dirname(abspath(out_path)), exist_ok=True)
         fig.savefig(out_path, dpi=dpi, bbox_inches='tight')
         print(f'\nSaved {out_path}')
@@ -234,7 +279,7 @@ def plot_binned(models, max_agb, width, overlay, box_fs, out_path, dpi, lines=Fa
 if __name__ == "__main__":
 
     models, max_agb, nbins, out_path, dpi, norm_mode, quantiles, q_width, diff_vs, box_fs, style, bin_width, \
-        overlay, lines = parse_arguments()
+        overlay, lines, y_mode, n_boot = parse_arguments()
     edges = np.linspace(0, max_agb, nbins + 1)
 
     # First pass: load, compute stats, histogram, and track the global max count for a shared scale.
@@ -256,7 +301,7 @@ if __name__ == "__main__":
         print(f"  {m['title']}: N={len(preds):,}  r={r:.3f}  R2={r2:.3f}  RMSE={rmse:.1f}  bias={bias:+.1f}")
 
     if style == 'binned':
-        plot_binned(models, max_agb, bin_width, overlay, box_fs, out_path, dpi, lines)
+        plot_binned(models, max_agb, bin_width, overlay, box_fs, out_path, dpi, lines, y_mode, n_boot)
         raise SystemExit
 
     if norm_mode == 'column':

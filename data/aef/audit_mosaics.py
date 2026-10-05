@@ -21,7 +21,9 @@ import rasterio as rs
 from os import listdir
 from os.path import join, isdir, basename, exists
 
-# An AGBRef cell is 0.1 deg + 1 km buffer -> at most ~1.4 km per side at 10 m resolution.
+# Default size ceiling. An AGBRef cell is 0.1 deg + 1 km buffer -> ~1400 px per side at 10 m, so 4000
+# leaves ample room there; but map-figure windows cut by download_tile.py --window_km 40 are ~4040 px
+# legitimately. So this is a --max_px flag (matching mosaic_aois.py), not a constant to edit.
 MAX_EXPECTED_PX = 4000
 MIN_EXPECTED_PX = 100
 AEF_NODATA = -128
@@ -31,7 +33,7 @@ AEF_BANDS = 64
 MAX_NODATA_FRAC = 0.60
 
 
-def audit_aoi(aoi_dir):
+def audit_aoi(aoi_dir, max_px = MAX_EXPECTED_PX):
     """Check one AOI mosaic. Returns a list of failure strings (empty == healthy)."""
     aoi_id = basename(aoi_dir)
     target = join(aoi_dir, f"{aoi_id}.tiff")
@@ -41,9 +43,9 @@ def audit_aoi(aoi_dir):
     fails = []
     try:
         with rs.open(target) as s:
-            if s.width > MAX_EXPECTED_PX or s.height > MAX_EXPECTED_PX:
+            if s.width > max_px or s.height > max_px:
                 fails.append(f"{aoi_id}: implausible size {s.height}x{s.width} px "
-                             f"(> {MAX_EXPECTED_PX}) -- tiles misplaced across CRSs?")
+                             f"(> {max_px}) -- tiles misplaced across CRSs?")
             if s.width < MIN_EXPECTED_PX or s.height < MIN_EXPECTED_PX:
                 fails.append(f"{aoi_id}: suspiciously small {s.height}x{s.width} px")
             if s.count != AEF_BANDS:
@@ -68,6 +70,8 @@ def audit_aoi(aoi_dir):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--aef_dir", type=str, default="/scratch3/gsialelli/AEF")
+    parser.add_argument("--max_px", type=int, default=MAX_EXPECTED_PX,
+                        help="Largest plausible mosaic side, in px. Raise to ~4500 for 40 km map windows.")
     args = parser.parse_args()
 
     aoi_dirs = sorted(join(args.aef_dir, d) for d in listdir(args.aef_dir)
@@ -75,7 +79,7 @@ if __name__ == "__main__":
 
     all_fails = []
     for d in aoi_dirs:
-        all_fails.extend(audit_aoi(d))
+        all_fails.extend(audit_aoi(d, args.max_px))
 
     print(f"Audited {len(aoi_dirs)} AOI mosaics.")
     if all_fails:

@@ -16,6 +16,7 @@ xx.xx entries are being filled in. Rows are re-sorted automatically.
 
 Outputs: fig_benchmark.pdf (vector, for LaTeX) and fig_benchmark.png (preview).
 """
+import os
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
@@ -31,11 +32,11 @@ MODELS_A = {
     "AEF":         dict(frozen=53.70),
     "TESSERA":     dict(frozen=57.12),
     "SSL4EO-MoCo": dict(frozen=64.34, lora=63.05),
-    "Prithvi":     dict(frozen=76.17, lora=70.91, mt=None),
-    "Prithvi v2":  dict(frozen=66.43, lora=64.89, mt=None),
+    "Prithvi":     dict(frozen=76.17, lora=70.91, mt=71.98),
+    "Prithvi v2":  dict(frozen=66.43, lora=64.89, mt=64.08),
     "CROMA":       dict(frozen=66.57, lora=62.83, sar=61.56),
     "TerraMind":   dict(frozen=68.33, lora=64.66, sar=62.45),
-    "SatlasNet":   dict(frozen=69.20, lora=64.96, mt=None),
+    "SatlasNet":   dict(frozen=69.20, lora=64.96, mt=62.136),
     "SpectralGPT": dict(frozen=71.23, lora=65.77),
     "DOFA":        dict(frozen=75.24, lora=66.57, sar=65.58),
     "RemoteCLIP":  dict(frozen=78.17, lora=74.91),
@@ -52,7 +53,7 @@ SUP_B = {"all": 53.73, "s2": 58.57}
 
 XLIM = (46, 90)      # RMSE range shown; drawn inverted (90 left, 46 right)
 LEGEND = "right"     # "right" (two titled groups beside panel a) or "top"
-OUT = "fig_benchmark"
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "img", "fig_benchmark")
 
 # =============================== STYLE ==============================
 # Okabe-Ito palette: supervised baselines = blue, all GFMs (incl. AEF) = green

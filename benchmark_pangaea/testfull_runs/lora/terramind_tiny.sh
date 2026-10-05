@@ -18,4 +18,4 @@ if ! grep -qE "root_path_cluster: +/cluster/scratch/gsialelli *$" "$config_yaml"
     exit 1
 fi
 
-HYDRA_FULL_ERROR=1 TQDM_DISABLE=1 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=4 pangaea/run.py --config-name=test ckpt_dir=20260930_080105_f8cb5c_terramind_tiny_lora_reg_upernet_agbd
+AGBD_DUMP_H5=/cluster/scratch/gsialelli/agbd_dumps/20260930_080105_f8cb5c_terramind_tiny_lora_reg_upernet_agbd_agbd_test.h5 HYDRA_FULL_ERROR=1 TQDM_DISABLE=1 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=4 pangaea/run.py --config-name=test ckpt_dir=20260930_080105_f8cb5c_terramind_tiny_lora_reg_upernet_agbd

@@ -44,7 +44,12 @@ of ~64 t/ha over the 5.9% of the 59GPM window where the embeddings are nodata --
 biomass over the Tasman Sea. It never mattered for AGBRef, where comparison.py clips to the cell.
 
 Usage:
-    python make_map_figure.py [--out <path without extension>] [--dpi 300]
+    python make_map_figure.py [--rows s2 aef agbd cci | all] [--tiles 59GPM Europe ...]
+                              [--layout regions-as-rows | regions-as-cols] [--allow-missing]
+                              [--out <path without extension>] [--dpi 300] [--render-px N]
+
+    The original figure (all six rows, regions as columns) is
+    python make_map_figure.py --rows all --layout regions-as-cols --tiles 59GPM 32TPT 49SBT
 
 """
 
@@ -152,6 +157,13 @@ PRED_CCI  = "/scratch3/gsialelli/CCI/maps"
 # is cosmetic. The model was also TRAINED on nearest-resampled DEMs, so this is additionally a
 # train/inference mismatch. Both facts must be disclosed if these maps are published.
 #
+# "pairing" names the maps a GEDI cell must be valid in to count towards that tile's "rmse" (and
+# its GEDI row): it is the footprint set the numbers were computed on, passed to
+# gedi_scatter.paired_samples so the asserted n stays tied to it. The three original tiles were
+# scored on all FOUR maps; tiles added later have no SSL4EO map and are scored on AEF/AGBD/CCI only.
+# Hiding the SSL4EO row (--rows) does NOT re-score the original tiles -- their numbers stay the
+# four-way ones. So the caption must say the pairing differs between the original and new regions.
+#
 # "crop" (left, bottom, right, top) in the tile's own UTM CRS, or None for the whole AEF window.
 # It is applied IDENTICALLY to all three rows, so a column stays a like-for-like comparison. Chosen
 # per tile by measurement, not by eye -- rationale inline below so it can be re-derived or retuned.
@@ -166,6 +178,7 @@ TILES = [
     # Do NOT try to extend further north: land occupies row 0 of the AEF raster, so the window is
     # already truncated at its northern edge. More north needs a new AEF download, not a new crop.
     {"tile": "59GPM", "region": "Australasia",  "drmse": 3.53,
+     "pairing": ("aef", "agbd", "ssl4eo", "cci"),
      "rmse": {"aef": 64.28, "agbd": 66.81, "ssl4eo": 72.49, "cci": 90.32, "n": 5086},
      "crop": (637460.0, 5137000.0, 666170.0, 5165710.0)},
     # 32TPT (Tyrol, AUSTRIA -- 10.77-11.33 E, 47.15-47.53 N), swapped in 2026-07-21 to replace
@@ -176,6 +189,7 @@ TILES = [
     # No crop needed: this AEF mosaic is clean -- 0.00% nodata, exact 10.0 m, no edge frame, and
     # the CCI block is already on its grid.
     {"tile": "32TPT", "region": "Europe",       "drmse": 3.22,
+     "pairing": ("aef", "agbd", "ssl4eo", "cci"),
      "rmse": {"aef": 75.54, "agbd": 87.27, "ssl4eo": 103.77, "cci": 117.11, "n": 51995},
      "crop": None},
     # drmse here is Asia's REGION-level eval-h5 gap (5.64), the same number the original comment
@@ -194,6 +208,7 @@ TILES = [
     # (the mosaic is currently 9.99576 m because of it). That needs an AEF inference re-run, so this
     # crop is the no-recompute stand-in, not a substitute for fixing the mosaic.
     {"tile": "49SBT", "region": "Asia",         "drmse": 5.64,
+     "pairing": ("aef", "agbd", "ssl4eo", "cci"),
      "rmse": {"aef": 95.57, "agbd": 121.46, "ssl4eo": 137.87, "cci": 175.59, "n": 5748},
      "crop": (234297.1, 3724522.1, 275379.7, 3765694.6)},
 ]
@@ -218,6 +233,10 @@ ROWS = [
     {"key": "ssl4eo", "label": "SSL4EO-MoCo (30 m)"},
     {"key": "cci",    "label": "ESA CCI v6.0"},
 ]
+
+# Rows drawn when --rows is not given. GEDI and SSL4EO are off by default: SSL4EO maps exist only
+# for the original three regions, and the GEDI row is a reference view rather than a result.
+DEFAULT_ROWS = ("s2", "aef", "agbd", "cci")
 
 # Directory of unzipped .SAFE products. The specific product is NOT globbed by tile -- it is derived
 # from the AGBD prediction filename (see find_s2), because this directory holds more than one
@@ -532,7 +551,7 @@ def draw_gedi(ax, spec, bounds) :
     Returns:
     - int: the number of cells drawn.
     """
-    cx, cy, ref, _ = paired_samples(spec["tile"])
+    cx, cy, ref, _ = paired_samples(spec["tile"], spec.get("pairing"))
 
     n_expected = spec.get("rmse", {}).get("n")
     assert n_expected is None or len(ref) == n_expected, \
@@ -651,27 +670,187 @@ def column_window(spec) :
     return cb, crs
 
 
+def panel_source(spec, key, col_bounds, col_crs) :
+    """
+    Resolve what a panel reads: its input path plus the window and CRS it is cropped to.
+
+    Every row is cropped to the SAME column window. Previously only the AGBD row was, because the
+    window was by definition the whole AEF panel; now that "crop" can shrink it, the AEF and CCI
+    rows must follow or a column would stop being like-for-like. The CCI crop already sits on the
+    AEF grid, so the same bounds apply unchanged.
+
+    Args:
+    - spec (dict): a TILES entry.
+    - key (str): a ROWS key.
+    - col_bounds (tuple or None), col_crs: the region's window, from column_window.
+
+    Returns:
+    - path: a raster path; for "s2" a [B04, B03, B02] list (or None); for "gedi" the window itself,
+      since the footprints are read by draw_gedi rather than from a raster.
+    - tuple, CRS: the bounds and CRS to crop to.
+    """
+    tile = spec["tile"]
+    if key == "s2"     : path = find_s2(find_agbd(tile))
+    elif key == "gedi" : path = col_bounds
+    elif key == "aef"  : path = join(PRED_AEF, f"{tile}.tif")
+    elif key == "agbd" : path = find_agbd(tile)
+    elif key == "ssl4eo" : path = join(PRED_SSL4EO, f"{tile}.tif")
+    elif key == "cci"  : path = join(PRED_CCI, f"{tile}_CCI.tif")
+    else : raise ValueError(f"unknown row key {key!r}")
+    return path, col_bounds, col_crs
+
+
+def panel_missing(key, path, col_bounds) :
+    """True if a panel cannot be drawn. find_s2 returns a LIST of band paths, so exists() cannot be
+    applied to it directly. Every row must be cropped to the column window (two tiles carry a
+    "crop"), so a None window -- i.e. no AEF prediction for the tile -- makes the whole region
+    undrawable, not just its AEF panel."""
+    if path is None or col_bounds is None : return True
+    if key in ("s2", "gedi") : return False
+    return not exists(path)
+
+
+def draw_panel(ax, spec, row, path, bounds, crs, col_bounds, scalebar) :
+    """
+    Draw one panel. The S2 row is a true-colour composite, the GEDI row a scatter in map
+    coordinates, and every other row a single AGB band on the shared viridis ramp.
+
+    Args:
+    - ax: the panel's axes.
+    - spec (dict): a TILES entry.
+    - row (dict): a ROWS entry.
+    - path, bounds, crs: from panel_source.
+    - col_bounds (tuple): the region's window.
+    - scalebar (bool): whether this panel carries the region's scale bar.
+    """
+    key = row["key"]
+    if key == "s2" :
+        # True colour is NOT water-masked, unlike the AGB rows. The mask exists there because an
+        # AGB estimate over water is meaningless; a photograph of water is not. Greying the
+        # harbours here would delete the very context this row was added for.
+        data, p_bounds, _ = read_rgb(path, bounds, crs)
+        ax.imshow(data, interpolation = "nearest")
+    elif key == "gedi" :
+        # This panel is in map coordinates, so re-blank the ticks after the limits are set.
+        draw_gedi(ax, spec, col_bounds)
+        ax.set_xticks([]) ; ax.set_yticks([])
+        return
+    else :
+        data, p_bounds, p_crs = read_panel(path, bounds = bounds, crs = crs)
+
+        # Same WorldCover water mask on every AGB row of the region. Built per panel from that
+        # panel's own bounds/shape rather than shared, because the rasters differ by a pixel or two
+        # after downsampling and a shared mask would be off-by-one.
+        wm = water_mask(spec["tile"], p_bounds, p_crs, data.shape)
+        if wm is not None : data = np.where(wm, np.nan, data)
+
+        cmap = plt.get_cmap(CMAP).copy()
+        cmap.set_bad(MASK_COLOR)
+        ax.imshow(data, cmap = cmap, vmin = VMIN, vmax = VMAX, interpolation = "nearest")
+
+        # Per-panel GEDI RMSE, bottom-left: a number belongs on the panel it describes.
+        rmse_label(ax, spec, key)
+
+    # The window makes each region ~40 km across, not the ~110 km tile it is named after, so every
+    # region carries one scale bar. It lives on the S2 panel when that row is shown (the natural
+    # place for a ground-distance cue) and otherwise on the first map panel. Every panel of a region
+    # is cropped to the same window on identical ground, so one bar per region suffices; the white
+    # bar is outlined in black in add_scalebar so it stays legible over imagery and viridis alike.
+    if scalebar : add_scalebar(ax, p_bounds, data.shape[:2])
+
+
+def grid_geometry(ratios, n_sources, regions_as_rows) :
+    """
+    Lay out the panel grid so every panel is drawn at its own aspect with no letterboxing.
+
+    A "crop" need not be square (59GPM is 41.0 x 28.7 km), and with equal cells a non-square panel
+    is letterboxed inside its cell -- it visibly shrinks and its title floats away from it. So the
+    regions' cells take ratios from their own aspects:
+      - regions as COLUMNS: width_ratio = aspect, so every panel has the SAME HEIGHT;
+      - regions as ROWS: height_ratio = 1 / aspect, so every panel has the SAME WIDTH.
+    The colorbar gets one extra thin cell (a column on the right, or a row at the bottom). Ground
+    scale still differs between regions, which is what the per-region scale bar states.
+
+    The figure's second dimension is derived rather than hard-coded: hard-coding it left inches of
+    dead space as soon as a region stopped being square. matplotlib measures wspace/hspace as a
+    fraction of the AVERAGE cell size, hence the (1 + space * (n - 1) / n) terms.
+
+    Args:
+    - ratios (list): width / height of each region's window.
+    - n_sources (int): number of enabled rows of ROWS.
+    - regions_as_rows (bool): the layout.
+
+    Returns:
+    - (fig_w, fig_h), GridSpec kwargs (dict), and the grid's (nrows, ncols).
+    """
+    if not regions_as_rows :
+        # Unchanged from the original regions-as-columns figure, so it re-renders identically.
+        all_ratios = ratios + [0.04 * sum(ratios) / max(1, len(ratios))]
+        wspace, hspace = 0.08, 0.12
+        left, right, top, bottom = 0.06, 0.93, 0.90, 0.05
+        fig_w = 10.0
+        n_cells = len(all_ratios)
+        axes_w = (fig_w * (right - left)) / (1 + wspace * (n_cells - 1) / n_cells)
+        panel_h = (axes_w * all_ratios[0] / sum(all_ratios)) / ratios[0]
+        fig_h = (panel_h * n_sources * (1 + hspace * (n_sources - 1) / n_sources)) / (top - bottom)
+        gs_kw = dict(width_ratios = all_ratios, wspace = wspace, hspace = hspace,
+                     left = left, right = right, top = top, bottom = bottom)
+        return (fig_w, fig_h), gs_kw, (n_sources, len(ratios) + 1)
+
+    # Regions as rows. ~2.5 in per source column keeps a 4-source figure at the 10 in the
+    # regions-as-columns figure used, and lets it widen (rather than squeeze) with more sources.
+    wspace, hspace = 0.06, 0.08
+    left, right, top, bottom = 0.08, 0.98, 0.97, 0.03
+    fig_w = 2.5 * n_sources
+    axes_w = (fig_w * (right - left)) / (1 + wspace * (n_sources - 1) / n_sources)
+    panel_w = axes_w / n_sources
+    heights = [panel_w / r for r in ratios]
+    cbar_h = 0.07 * panel_w
+    all_heights = heights + [cbar_h]
+    n_cells = len(all_heights)
+    axes_h = sum(all_heights) * (1 + hspace * (n_cells - 1) / n_cells)
+    fig_h = axes_h / (top - bottom)
+    gs_kw = dict(height_ratios = all_heights, wspace = wspace, hspace = hspace,
+                 left = left, right = right, top = top, bottom = bottom)
+    return (fig_w, fig_h), gs_kw, (n_cells, n_sources)
+
+
 ###################################################################################################
 # Figure
 
-def make_figure(out_path, dpi) :
+def make_figure(out_path, dpi, rows, tiles, regions_as_rows = True, allow_missing = False) :
     """
     Compose and save the figure.
 
     Args:
     - out_path (str): output path WITHOUT extension; .pdf and .png are both written.
     - dpi (int): resolution for the raster output.
+    - rows (list): the ROWS entries to draw, in ROWS order.
+    - tiles (list): the TILES entries to draw, in TILES order.
+    - regions_as_rows (bool): one region per figure row (sources as columns) if True, else the
+      original one-region-per-column layout.
+    - allow_missing (bool): draw grey placeholders for panels whose input is missing instead of
+      refusing to render. For previews only -- a published figure must not carry a blank panel.
     """
-    ncols = len(TILES)
-    nrows = len(ROWS)
+    windows = [column_window(spec) for spec in tiles]
 
-    # Column windows are resolved up front because the grid geometry depends on them: a "crop" need
-    # not be square (59GPM is 41.0 x 28.7 km), and with equal-width cells a non-square panel gets
-    # letterboxed inside its cell -- the column visibly shrinks and its title floats away from it.
-    # Giving each column a width_ratio equal to its own aspect makes every panel the SAME HEIGHT
-    # with differing widths, so titles line up and no panel is padded. Ground scale still differs
-    # between columns, which is exactly what the per-column scale bar is there to state.
-    windows = [column_window(spec) for spec in TILES]
+    # Resolve every panel up front and refuse to draw anything if one is missing. A placeholder
+    # panel is easy to miss in a 24-panel figure, and a figure that renders "fine" with a hole in it
+    # is how a missing input reaches the paper. The full list is printed so one run shows all gaps.
+    sources, missing = {}, []
+    for spec, (cb, ccrs) in zip(tiles, windows) :
+        for row in rows :
+            src = panel_source(spec, row["key"], cb, ccrs)
+            sources[(spec["tile"], row["key"])] = src
+            if panel_missing(row["key"], src[0], cb) :
+                missing.append(f'{row["label"]} / {spec["tile"]}')
+    if missing and not allow_missing :
+        print(f"ERROR: {len(missing)} panel(s) have no input:", file = sys.stderr)
+        for m in missing : print(f"  {m}", file = sys.stderr)
+        print("Produce the inputs, drop the region/source (--tiles/--rows), or pass --allow-missing "
+              "for a preview with placeholders.", file = sys.stderr)
+        sys.exit(1)
+
     ratios = []
     for (cb, _) in windows :
         if cb is None :
@@ -680,127 +859,59 @@ def make_figure(out_path, dpi) :
             w = abs(cb[2] - cb[0]) ; h = abs(cb[3] - cb[1])
             ratios.append(w / h if h > 0 else 1.0)
 
-    all_ratios = ratios + [0.04 * sum(ratios) / max(1, ncols)]
-    wspace, hspace = 0.08, 0.12
-    left, right, top, bottom = 0.06, 0.93, 0.90, 0.05
+    figsize, gs_kw, (g_rows, g_cols) = grid_geometry(ratios, len(rows), regions_as_rows)
+    fig = plt.figure(figsize = figsize)
+    gs = gridspec.GridSpec(g_rows, g_cols, **gs_kw)
 
-    # Derive the figure HEIGHT from the column aspects instead of hard-coding it. Panels are all
-    # the same height, so once the widths are fixed the height follows; hard-coding it left several
-    # inches of dead white space below the bottom row as soon as a column stopped being square.
-    # matplotlib measures wspace/hspace as a fraction of the AVERAGE cell size, hence the
-    # (1 + space * (n - 1) / n) terms.
-    fig_w = 10.0
-    n_cells = len(all_ratios)
-    axes_w = (fig_w * (right - left)) / (1 + wspace * (n_cells - 1) / n_cells)
-    panel_h = (axes_w * all_ratios[0] / sum(all_ratios)) / ratios[0]
-    fig_h = (panel_h * nrows * (1 + hspace * (nrows - 1) / nrows)) / (top - bottom)
+    # The scale bar goes on the S2 panel if shown, else on the first map panel. GEDI cannot carry
+    # it: that panel is drawn in map coordinates, while add_scalebar works in pixel indices.
+    bar_keys = [row["key"] for row in rows if row["key"] != "gedi"]
+    bar_key = "s2" if "s2" in bar_keys else (bar_keys[0] if bar_keys else None)
 
-    fig = plt.figure(figsize = (fig_w, fig_h))
-    gs = gridspec.GridSpec(
-        nrows, ncols + 1,
-        width_ratios = all_ratios,
-        wspace = wspace, hspace = hspace,
-        left = left, right = right, top = top, bottom = bottom,
-    )
-
-    missing = []
-    for c, spec in enumerate(TILES) :
+    for t, spec in enumerate(tiles) :
         tile = spec["tile"]
+        col_bounds, _ = windows[t]
+        region_label = f'{spec["region"]}  ({tile})'
 
-        # The AEF window defines the extent for the whole column: it is the smaller of the two, and
-        # cropping the AGBD tile down to it is what makes the column a like-for-like comparison.
-        aef_path = join(PRED_AEF, f"{tile}.tif")
-        agbd_path = find_agbd(tile)
-
-        # The column window, already resolved (and bounds-checked) above for the grid geometry.
-        col_bounds, col_crs = windows[c]
-
-        for r, row in enumerate(ROWS) :
-            ax = fig.add_subplot(gs[r, c])
+        for s, row in enumerate(rows) :
+            ax = fig.add_subplot(gs[t, s] if regions_as_rows else gs[s, t])
             ax.set_xticks([]) ; ax.set_yticks([])
 
-            # Every row is cropped to the SAME column window. Previously only the AGBD row was,
-            # because the window was by definition the whole AEF panel; now that "crop" can shrink
-            # it, the AEF and CCI rows must follow or a column would stop being like-for-like.
-            # The CCI crop already sits on the AEF grid, so the same bounds apply unchanged.
-            if row["key"] == "s2" :
-                path, bounds, crs = find_s2(agbd_path), col_bounds, col_crs
-            elif row["key"] == "gedi" :
-                # No raster: the footprints are read from the GEDI extract by draw_gedi. The column
-                # window is still required, since it is what the reference set is restricted to.
-                path, bounds, crs = col_bounds, col_bounds, col_crs
-            elif row["key"] == "aef" :
-                path, bounds, crs = aef_path, col_bounds, col_crs
-            elif row["key"] == "cci" :
-                path, bounds, crs = join(PRED_CCI, f"{tile}_CCI.tif"), col_bounds, col_crs
-            elif row["key"] == "ssl4eo" :
-                path, bounds, crs = join(PRED_SSL4EO, f"{tile}.tif"), col_bounds, col_crs
-            else :
-                path, bounds, crs = agbd_path, col_bounds, col_crs
-
-            # find_s2 returns a LIST of band paths, so exists() cannot be applied to it directly.
-            # ssl4eo joins agbd/s2 in the col_bounds guard: it too must be cropped to the column
-            # window (two tiles carry a "crop"), so a None window means the column cannot be drawn.
-            gone = (path is None
-                    or (row["key"] not in ("s2", "gedi") and not exists(path))
-                    or (row["key"] in ("agbd", "s2", "ssl4eo", "gedi") and col_bounds is None))
-            if gone :
-                missing.append(f'{row["label"]} / {tile}')
+            path, bounds, crs = sources[(tile, row["key"])]
+            if panel_missing(row["key"], path, col_bounds) :
                 ax.text(0.5, 0.5, f'[{row["label"]}\n{tile}]\nnot found', ha = "center",
                         va = "center", fontsize = 9, color = "0.5", transform = ax.transAxes)
                 ax.set_facecolor("0.95")
-            elif row["key"] == "s2" :
-                # True colour is NOT water-masked, unlike the AGB rows. The mask exists there
-                # because an AGB estimate over water is meaningless; a photograph of water is not.
-                # Greying the harbours here would delete the very context this row was added for.
-                data, p_bounds, p_crs = read_rgb(path, bounds, crs)
-                ax.imshow(data, interpolation = "nearest")
-                # Scale bar lives on the Sentinel-2 row (the top row): the AEF window makes each
-                # column ~40 km across, not the ~110 km tile it is named after, and the S2 panel is
-                # the natural place to carry that cue. Every row of a column is cropped to the same
-                # window on identical ground, so one bar per column (here) suffices; the white bar
-                # is outlined in black in add_scalebar so it stays legible over the imagery too.
-                add_scalebar(ax, p_bounds, data.shape[:2])
-            elif row["key"] == "gedi" :
-                # This panel is in map coordinates, so re-blank the ticks after the limits are set.
-                draw_gedi(ax, spec, col_bounds)
-                ax.set_xticks([]) ; ax.set_yticks([])
             else :
-                data, p_bounds, p_crs = read_panel(path, bounds = bounds, crs = crs)
+                draw_panel(ax, spec, row, path, bounds, crs, col_bounds,
+                           scalebar = row["key"] == bar_key)
 
-                # Same WorldCover water mask on every AGB row of the column. Built per panel from
-                # that panel's own bounds/shape rather than shared, because the rasters differ by
-                # a pixel or two after downsampling and a shared mask would be off-by-one.
-                wm = water_mask(tile, p_bounds, p_crs, data.shape)
-                if wm is not None : data = np.where(wm, np.nan, data)
+            # Region labels on the outer edge that runs along the regions, source labels on the
+            # other. The region label is just region (tile): per-model GEDI RMSE sits on each panel.
+            if regions_as_rows :
+                if t == 0 : ax.set_title(row["label"], fontsize = 11, fontweight = "bold", pad = 6)
+                if s == 0 : ax.set_ylabel(region_label.replace("  ", "\n"), fontsize = 11,
+                                          fontweight = "bold", labelpad = 8)
+            else :
+                if s == 0 : ax.set_title(region_label, fontsize = 11, fontweight = "bold", pad = 8)
+                if t == 0 : ax.set_ylabel(row["label"], fontsize = 12, fontweight = "bold",
+                                          labelpad = 10)
 
-                cmap = plt.get_cmap(CMAP).copy()
-                cmap.set_bad(MASK_COLOR)
-                ax.imshow(data, cmap = cmap, vmin = VMIN, vmax = VMAX, interpolation = "nearest")
-
-                # Per-panel GEDI RMSE, bottom-left. This is where the old two-model header line went:
-                # with four maps a header can't hold them all legibly, and a number belongs on the
-                # panel it describes anyway.
-                rmse_label(ax, spec, row["key"])
-
-            if r == 0 :
-                # Column header is just region (tile) now -- per-model GEDI RMSE moved onto each
-                # panel (rmse_label), so the old two-line header with its GEDI subtitle is gone and
-                # the title pad shrinks back to a normal gap.
-                ax.set_title(f'{spec["region"]}  ({tile})',
-                             fontsize = 11, fontweight = "bold", pad = 8)
-            if c == 0 :
-                ax.set_ylabel(row["label"], fontsize = 12, fontweight = "bold", labelpad = 10)
-
-    # Shared colorbar, spanning ONLY the rows it actually describes. The Sentinel-2 row is a true
+    # Shared colorbar, spanning ONLY the sources it actually describes. The Sentinel-2 row is a true
     # colour composite on no such scale, so running the bar past it would imply t/ha applies there.
-    agb_rows = [i for i, row in enumerate(ROWS) if row["key"] != "s2"]
-    cbar_ax = fig.add_subplot(gs[min(agb_rows) : max(agb_rows) + 1, ncols])
-    sm = ScalarMappable(cmap = CMAP, norm = Normalize(vmin = VMIN, vmax = VMAX))
-    sm.set_array([])
-    cbar = fig.colorbar(sm, cax = cbar_ax)
-    cbar.set_label(CBAR_LABEL, fontsize = 10)
-    cbar.ax.tick_params(labelsize = 9)
+    agb = [i for i, row in enumerate(rows) if row["key"] != "s2"]
+    if agb :
+        if regions_as_rows :
+            cbar_ax = fig.add_subplot(gs[len(tiles), min(agb) : max(agb) + 1])
+            orientation = "horizontal"
+        else :
+            cbar_ax = fig.add_subplot(gs[min(agb) : max(agb) + 1, len(tiles)])
+            orientation = "vertical"
+        sm = ScalarMappable(cmap = CMAP, norm = Normalize(vmin = VMIN, vmax = VMAX))
+        sm.set_array([])
+        cbar = fig.colorbar(sm, cax = cbar_ax, orientation = orientation)
+        cbar.set_label(CBAR_LABEL, fontsize = 10)
+        cbar.ax.tick_params(labelsize = 9)
 
     makedirs(dirname(abspath(out_path)), exist_ok = True)
     for ext in ("pdf", "png") :
@@ -813,11 +924,46 @@ def make_figure(out_path, dpi) :
         for m in missing : print(f"  {m}")
 
 
+def select_rows(keys) :
+    """ROWS entries for the requested keys, always in ROWS order ("all" = every row)."""
+    valid = [row["key"] for row in ROWS]
+    if "all" in keys : return list(ROWS)
+    unknown = [k for k in keys if k not in valid]
+    if unknown : sys.exit(f"--rows: unknown key(s) {unknown}; choose from {valid} or 'all'")
+    return [row for row in ROWS if row["key"] in keys]
+
+
+def select_tiles(names) :
+    """TILES entries matching tile IDs or region names (case-insensitive), in TILES order."""
+    if names is None : return list(TILES)
+    wanted = {n.lower() for n in names}
+    known = {spec["tile"].lower() for spec in TILES} | {spec["region"].lower() for spec in TILES}
+    unknown = sorted(wanted - known)
+    if unknown :
+        sys.exit(f"--tiles: unknown tile/region {unknown}; known: "
+                 f"{[(s['tile'], s['region']) for s in TILES]}")
+    return [s for s in TILES if s["tile"].lower() in wanted or s["region"].lower() in wanted]
+
+
 if __name__ == "__main__" :
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type = str,
-                        default = join(dirname(abspath(__file__)), "plots", "map_AEF_vs_AGBD-features"))
+                        default = join(dirname(abspath(__file__)), "img", "map_AEF_vs_AGBD-features"))
     parser.add_argument("--dpi", type = int, default = 300)
+    parser.add_argument("--rows", type = str, nargs = "+", default = list(DEFAULT_ROWS),
+                        help = f"Sources to draw, any of {[r['key'] for r in ROWS]} or 'all'. Drawn in "
+                               f"that fixed order whatever order they are given in. "
+                               f"Default: {' '.join(DEFAULT_ROWS)}.")
+    parser.add_argument("--tiles", type = str, nargs = "+", default = None,
+                        help = "Regions to draw, by tile ID or region name (e.g. 32TPT or Europe). "
+                               "Default: every entry in TILES.")
+    parser.add_argument("--layout", choices = ("regions-as-rows", "regions-as-cols"),
+                        default = "regions-as-rows",
+                        help = "regions-as-rows: one region per figure row, sources as columns. "
+                               "regions-as-cols: the original layout, one region per column.")
+    parser.add_argument("--allow-missing", action = "store_true",
+                        help = "Draw placeholders for panels with no input instead of exiting. "
+                               "PREVIEW ONLY.")
     parser.add_argument("--render-px", type = int, default = None,
                         help = "Downsample panels to about this many px per side. PREVIEW ONLY -- "
                                "it decimates with nearest neighbour and can alias out fine-scale "
@@ -829,4 +975,6 @@ if __name__ == "__main__" :
         print(f"WARNING: rendering at ~{RENDER_PX} px/panel (preview). "
               f"Published output should omit --render-px so panels stay at native 10 m.")
 
-    make_figure(args.out, args.dpi)
+    make_figure(args.out, args.dpi, select_rows(args.rows), select_tiles(args.tiles),
+                regions_as_rows = args.layout == "regions-as-rows",
+                allow_missing = args.allow_missing)

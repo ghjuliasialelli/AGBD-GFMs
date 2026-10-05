@@ -6,6 +6,7 @@ One point per LoRA run; RMSE axis inverted so that right = better.
 
 Outputs: fig_r2.pdf and fig_r2.png.
 """
+import os
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -28,7 +29,7 @@ RUNS = [
     ("TerraMind + SAR", 62.45, 0.60979),   # terramind_tiny
 ]
 XLIM = (60, 78.5)    # RMSE range, drawn inverted (right = better)
-OUT = "fig_r2"
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "img", "fig_r2")
 
 # Labels: the points sit on a near-straight diagonal, so labels alternate
 # between the upper-left and lower-right side of it (in order of R^2), are

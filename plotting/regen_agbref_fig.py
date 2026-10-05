@@ -8,12 +8,14 @@ metric boxes, dpi). Pure numpy+matplotlib. Writes plots/comparison_combined_rege
     python regen_agbref_fig.py --big-fonts     # same plots, all fonts scaled up
 """
 import argparse
+import os
 import numpy as np, csv
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-PERPLOT = "results/perplot_notrain_skip_jap_mean_max500.csv"
+HERE = os.path.dirname(os.path.abspath(__file__))
+PERPLOT = os.path.join(HERE, "..", "comparison", "agbref", "results", "perplot_notrain_skip_jap_mean_max500.csv")
 rows = list(csv.DictReader(open(PERPLOT)))
 agbref = np.array([float(r["agbref"]) for r in rows])
 nico   = np.array([float(r["nico_mean"]) for r in rows])
@@ -131,8 +133,9 @@ def make_figure(binned_only=False, font_scale=1.0):
                    columnspacing=1.0, handletextpad=0.4, borderpad=0.5)
 
     suffix = "_bigfont" if font_scale != 1.0 else ""
-    out = ("plots/comparison_binned_regen{}.png" if binned_only
-           else "plots/comparison_combined_regen{}.png").format(suffix)
+    name = ("comparison_binned_regen{}.png" if binned_only
+            else "comparison_combined_regen{}.png").format(suffix)
+    out = os.path.join(HERE, "img", name)
     plt.savefig(out, dpi=1200, bbox_inches="tight")
     print("saved", out)
 

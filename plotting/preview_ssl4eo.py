@@ -11,7 +11,7 @@ are the same ground even though they are on different grids (30 m vs 10 m) -- th
 `src.bounds`, never from a filename.
 
 Usage (agbd env):
-    python comparison/maps/preview_ssl4eo.py \
+    python plotting/preview_ssl4eo.py \
         --pred /scratch3/gsialelli/ssl4eo_maps/diag/32TPT_preview.tif \
         --cache /scratch3/gsialelli/ssl4eo_maps/cache/32TPT.npz
 

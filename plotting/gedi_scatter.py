@@ -62,9 +62,9 @@ def sample1(path, xy) :
         return np.array([v[0] for v in src.sample(xy, indexes=[1])], dtype="float64")
 
 
-def paired_samples(tile) :
+def paired_samples(tile, models = None) :
     """Return (cx, cy, ref, {model_key: pred}) over the display-window, water-masked,
-    all-four-valid GEDI cells -- i.e. exactly the reference set every panel's RMSE is computed on.
+    all-models-valid GEDI cells -- i.e. exactly the reference set every panel's RMSE is computed on.
 
     The coordinates are returned as well as the values because make_map_figure.py draws these same
     cells as its GEDI row: the map row and the numbers on the map MUST come from one selection, or
@@ -72,6 +72,9 @@ def paired_samples(tile) :
 
     Args:
     - tile (str): MGRS tile name.
+    - models (iterable or None): the map keys a cell must be valid in to count. None = all four
+      (MODELS), which is how the 59GPM/32TPT/49SBT numbers were computed. Tiles with no SSL4EO map
+      pass ("aef", "agbd", "cci"); the pairing set changes n, so it must match the published one.
 
     Returns:
     - np.ndarray, np.ndarray: cell-centre x, y in the tile's UTM CRS.
@@ -80,14 +83,19 @@ def paired_samples(tile) :
     """
     b = json.load(open(f"{GEDI_DIR}/bboxes.json"))[tile]
     crs = b["crs"]
-    win = CROP[tile] if CROP[tile] is not None else b["aef_utm"]   # display scope, matches the map
+    win = CROP.get(tile) if CROP.get(tile) is not None else b["aef_utm"]   # display scope, matches the map
     paths = {"aef": b["aef_path"], "agbd": b["agbd_path"],
              "ssl4eo": SSL.format(tile), "cci": CCI.format(tile)}
+    keys = [k for k, _ in MODELS] if models is None else list(models)
+    unknown = set(keys) - set(paths)
+    assert not unknown, f"{tile}: unknown model key(s) {sorted(unknown)}"
+    paths = {k: paths[k] for k in keys}
 
     df = pd.read_csv(f"{GEDI_DIR}/gedi_{tile}.csv")
     df = df[(df.date >= DAY0) & (df.date <= DAY1)]
 
-    with rasterio.open(paths["agbd"]) as g :
+    # The 10 m S2 cell grid comes from the AGBD-features raster whether or not "agbd" is paired.
+    with rasterio.open(b["agbd_path"]) as g :
         gt, gh, gw = g.transform, g.height, g.width
     xs, ys = warp_transform("EPSG:4326", crs, df.lon.values, df.lat.values)
     xs, ys = np.asarray(xs), np.asarray(ys)
@@ -115,7 +123,7 @@ def paired_samples(tile) :
 
 def main() :
     p = argparse.ArgumentParser()
-    p.add_argument("--out", default = join(dirname(abspath(__file__)), "plots", "gedi_scatter"))
+    p.add_argument("--out", default = join(dirname(abspath(__file__)), "img", "gedi_scatter"))
     p.add_argument("--dpi", type = int, default = 200)
     args = p.parse_args()
 

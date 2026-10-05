@@ -3,12 +3,13 @@ Pareto front: RMSE vs Throughput for geospatial foundation models.
 Fine-tuning cost (GPU-hours) encoded as bubble size OR color.
 
 Usage:
-    python pareto_plot.py --mode bubble   # bubble size = GPU-hours
-    python pareto_plot.py --mode color    # color = GPU-hours
-    python pareto_plot.py --mode combined # both size + color
+    python plot_throughput.py --mode bubble   # bubble size = GPU-hours
+    python plot_throughput.py --mode color    # color = GPU-hours
+    python plot_throughput.py --mode combined # both size + color
 """
 
 import argparse
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -393,7 +394,7 @@ def make_plot(mode="bubble", show_pareto=False, font_scale=1.0):
                          gap_pt=0.0,
                          skip=[not is_fixed[i] for i in idx])
     suffix = "_bigfont" if font_scale != 1.0 else ""
-    out = f"pareto_{mode}{suffix}.png"
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "img", f"pareto_{mode}{suffix}.png")
     plt.savefig(out, dpi=300, bbox_inches="tight")
     print(f"Saved: {out}")
     plt.show()

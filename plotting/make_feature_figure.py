@@ -274,8 +274,8 @@ def make_figure(features, out_path, zoom_px, dpi) :
 if __name__ == "__main__" :
     parser = argparse.ArgumentParser()
     here = dirname(abspath(__file__))
-    parser.add_argument("--features", type = str, default = join(here, "features"))
-    parser.add_argument("--out", type = str, default = join(here, "plots", "feature_pca_AEF_vs_AGBD-features"))
+    parser.add_argument("--features", type = str, default = join(here, "..", "comparison", "maps", "features"))
+    parser.add_argument("--out", type = str, default = join(here, "img", "feature_pca_AEF_vs_AGBD-features"))
     parser.add_argument("--zoom_px", type = int, default = 128, help = "Zoom window size in 10 m px (128 = 1.28 km).")
     parser.add_argument("--dpi", type = int, default = 300)
     args = parser.parse_args()

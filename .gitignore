@@ -46,7 +46,7 @@ data/eval_plots/
 # next to them ARE tracked.
 comparison/maps/features/**/*.npy
 
-# Bulk Sentinel-2 true-colour tiles for the AGBRef comparison maps (comparison/agbref/make_plot_maps.py
+# Bulk Sentinel-2 true-colour tiles for the AGBRef comparison maps (plotting/make_plot_maps.py
 # reads them from here) -- 7 JP2s, ~130 MB each, over the 100 MB limit. Provenance in
 # DATA_MANIFEST.md section E.
 comparison/agbref/data/s2_tci/
@@ -64,10 +64,12 @@ comparison/maps/plots/diagnostics_20260721/
 # Superseded intermediate outputs, kept locally for reference only.
 comparison/maps/plots/archive_20260720_prefix_encode_tile/
 comparison/maps/features/archive_20260720_prefix_encode_tile/
+comparison/maps/regen_dem_bilinear.py
+comparison/maps/warp_aef_to_tile_crs.py
 
 # LaTeX source + figures for the paper. Lives here for convenience but is
 # authored in Overleaf, and 4 of its imgs/*.png were byte-identical copies of
-# plots already tracked under comparison/*/plots/ (34 MB of duplication that
+# plots already tracked under plotting/img/ (34 MB of duplication that
 # would re-duplicate on every figure regen).
 manuscript/
 
@@ -78,3 +80,7 @@ experiments/generalization/eval_ablations/*
 experiments/generalization/EXTENDED.md
 
 technical_details/from_manuscript.md
+
+data/aef/dwn_errors/
+
+model/runs/upernet/

@@ -11,6 +11,7 @@ Edit the DATA block only. `None` = not available yet: the run is skipped.
 
 Outputs: fig_cost.pdf (vector, for LaTeX) and fig_cost.png (preview).
 """
+import os
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FixedLocator, MultipleLocator, NullLocator
@@ -38,7 +39,7 @@ RUNS = [
 
 YLIM = (59.5, 78.5)  # RMSE range
 INVERT_Y = True      # True: lower RMSE at the top (up = better)
-OUT = "fig_cost"
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "img", "fig_cost")
 
 SIZE_K = 1.0         # marker area [pt^2] per million parameters
 SIZE_REF = (10, 100, 300, 600)   # reference sizes shown in the legend [M]
