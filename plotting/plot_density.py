@@ -13,9 +13,9 @@ are computed on ALL finite pairs (not only those inside the plotted 0-max window
 
 Run (from the repo root; this is the published manuscript/imgs/density.png):
       python plotting/plot_density.py \
-          --model data/agbd_lite/eval/results/nico_film_59620098-1_59620098-1_59620098-1_2019-2020_nooverlap.h5 AGBD features \
-          --model data/agbd_lite/eval/results/nico_film_59620113-1_59620113-1_59620113-1_2019-2020_nooverlap.h5 AEF \
-          --model data/agbd_lite/eval/results/ssl4eo_moco_20260316_155017_agbd_test.h5 SSL4EO-MoCo \
+          --model model/eval/results/nico_film_59620098-1_59620098-1_59620098-1_2019-2020_nooverlap.h5 AGBD features \
+          --model model/eval/results/nico_film_59620113-1_59620113-1_59620113-1_2019-2020_nooverlap.h5 AEF \
+          --model benchmark_pangaea/results/ssl4eo_moco_20260316_155017_agbd_test.h5 SSL4EO-MoCo \
           --style binned --overlay --lines --box_fontsize 20 \
           --out manuscript/imgs/density.png
 

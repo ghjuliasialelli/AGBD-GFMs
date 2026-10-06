@@ -8,14 +8,12 @@
 #SBATCH --job-name=pangaea
 #SBATCH --gpus=rtx_4090:4
 
-# The run was trained with dataset.root_path_cluster=${TMPDIR}; the test job reads from
-# /cluster/scratch/gsialelli. Refuse to start on a stale path rather than fail mid-load.
-config_yaml=20260930_080105_f8cb5c_terramind_tiny_lora_reg_upernet_agbd/configs/config.yaml
-if ! grep -qE "root_path_cluster: +/cluster/scratch/gsialelli *$" "$config_yaml"; then
-    echo "root_path_cluster in $config_yaml is not /cluster/scratch/gsialelli:" >&2
-    grep -n "root_path_cluster" "$config_yaml" >&2
-    echo "fix it with: perl -i -pe 's|(root_path_cluster: ).*|\${1}/cluster/scratch/gsialelli|' $config_yaml" >&2
+# The data path below is passed via test_overrides, which only pangaea-bench's run.py from the
+# test_overrides commit onwards honours; an older checkout would silently ignore it and fail at data load.
+if ! grep -q "test_overrides" pangaea/run.py; then
+    echo "pangaea/run.py does not support test_overrides: update the pangaea-bench checkout (agbd-release)." >&2
     exit 1
 fi
 
-AGBD_DUMP_H5=/cluster/scratch/gsialelli/agbd_dumps/20260930_080105_f8cb5c_terramind_tiny_lora_reg_upernet_agbd_agbd_test.h5 HYDRA_FULL_ERROR=1 TQDM_DISABLE=1 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=4 pangaea/run.py --config-name=test ckpt_dir=20260930_080105_f8cb5c_terramind_tiny_lora_reg_upernet_agbd
+AGBD_DUMP_H5=/cluster/scratch/gsialelli/agbd_dumps/20260930_080105_f8cb5c_terramind_tiny_lora_reg_upernet_agbd_agbd_test.h5 HYDRA_FULL_ERROR=1 TQDM_DISABLE=1 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=4 pangaea/run.py --config-name=test ckpt_dir=20260930_080105_f8cb5c_terramind_tiny_lora_reg_upernet_agbd \
+    ++test_overrides.dataset.root_path_cluster=/cluster/scratch/gsialelli

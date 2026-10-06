@@ -76,7 +76,7 @@ RUN_AGBD = "59620098-1"
 ARCH     = "nico_film"
 
 # eval.py output, one row per GEDI footprint of the test split, years 2019-2020, drop_overlap=True.
-EVAL_DIR = "/scratch3/gsialelli/AGBD-GFMs/data/agbd_lite/eval/results"
+EVAL_DIR = "/scratch3/gsialelli/AGBD-GFMs/model/eval/results"
 EVAL_H5  = "{arch}_{run}_{run}_{run}_2019-2020_nooverlap.h5"
 EVAL_YEARS = [2019, 2020]
 EVAL_MODE  = "test"

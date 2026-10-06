@@ -12,9 +12,9 @@ the model's OWN labels, so the models need not share the same rows - though on t
 set they do (2,807,977 samples each).
 
 Run:  python plot_binned_models.py \
-          --model ../data/agbd_lite/helper/results/nico_film_59620098-..._nooverlap.h5 "AGBD features" green \
-          --model ../data/agbd_lite/helper/results/nico_film_59620113-..._nooverlap.h5 "AEF"           skyblue \
-          --model ../data/agbd_lite/helper/results/ssl4eo_moco_..._agbd_test.h5         "SSL4EO-MoCo"   "#C02BF2" \
+          --model model/eval/results/nico_film_59620098-..._nooverlap.h5 "AGBD features" green \
+          --model model/eval/results/nico_film_59620113-..._nooverlap.h5 "AEF"           skyblue \
+          --model benchmark_pangaea/results/ssl4eo_moco_..._agbd_test.h5                "SSL4EO-MoCo"   "#C02BF2" \
           --out ../manuscript/imgs/binned.png
 
 """

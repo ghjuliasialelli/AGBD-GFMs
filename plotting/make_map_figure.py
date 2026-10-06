@@ -76,6 +76,9 @@ from matplotlib import gridspec
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
 import matplotlib.patheffects as pe
+from matplotlib.patches import Patch
+from matplotlib.ticker import MaxNLocator
+from matplotlib.transforms import blended_transform_factory
 
 # The GEDI reference row reuses gedi_scatter.paired_samples VERBATIM rather than re-implementing the
 # footprint selection here. That selection (2020 footprints, one median value per 10 m S2 cell,
@@ -211,7 +214,66 @@ TILES = [
      "pairing": ("aef", "agbd", "ssl4eo", "cci"),
      "rmse": {"aef": 95.57, "agbd": 121.46, "ssl4eo": 137.87, "cci": 175.59, "n": 5748},
      "crop": (234297.1, 3724522.1, 275379.7, 3765694.6)},
+
+    # ---- Regions added 2026-10-05: North America, South America, Africa. --------------------------
+    # Picked by MEASUREMENT among tiles that have a local 2020 L2A product and lie in the GEDI L4A
+    # extract: 2020 GEDI footprints in the 40 km window centred on the tile, WorldCover tree and water
+    # fractions, and a leaf-on, low-cloud scene. Built by /scratch3/gsialelli/map_figure_pipeline_20261005/
+    # (plus a hand run for 21NZD). The caption must state, for these three:
+    #   - no SSL4EO map exists for them, so "pairing" (hence n and every RMSE) is AEF/AGBD/CCI only;
+    #   - their AGBD-features maps use BILINEAR DEMs built by comparison/maps/regen_dem_bilinear.py,
+    #     a re-implementation of the lost script behind the other three (not bit-identical: +-1-2 m
+    #     on a few % of pixels -- see that script's docstring);
+    #   - SPLIT: 10TDL and 37LCL are TEST-split tiles like the three above (held-out RMSEs), but
+    #     21NZD is a TRAIN-split tile, so its GEDI RMSEs are partly IN-SAMPLE. Kept by the user's
+    #     decision (2026-10-05): its test-split replacement 22NBL had no usable 2020 scene (every
+    #     orbit-R110 scene misses ~43% of the window -- a swath edge, over which AGBD-features predicted
+    #     on EMPTY input -- and every orbit-R067 scene is 23-44% cloud/shadow in the window; cropped to
+    #     the covered strip it kept only 522 GEDI cells), and the conclusions do not differ;
+    #   - 10TDL's Sentinel-2 PANEL is NOT the model input -- see "s2_display_product" below.
+    # "crop" = the largest axis-aligned rectangle that is 100% valid in the AEF prediction (computed).
+    # "rmse" = paired_samples(tile, pairing) at that crop: 2020 footprints, median per 10 m cell,
+    # WorldCover water masked -- the same method as the rows above. AEF < AGBD-features < CCI on all.
+    # CROSS-CHECK (comparison/maps/tile_metrics.py --mode raster: footprints from the AGBD dataset
+    # patches, full AEF window): 10TDL 100.0/106.6/151.2, 21NZD 100.7/109.1/153.9, 37LCL 42.8/53.4/55.6
+    # (AEF/AGBD/CCI) -- within ~1-5 t/ha and the same ranking, except AGBD on 37LCL (8.3 t/ha off),
+    # which is NOT cloud (<=1.5% of cells under SCL cloud/shadow; dropping them moves RMSE < 1 t/ha)
+    # and remains unexplained; the cross-check scores 1,276 footprints there vs 6,374 cells here.
+    # (The same symptom on 22NBL, 13.3 t/ha, WAS explained: the empty-input swath area.)
+    #
+    # 10TDL: Klamath Mountains, northern California (41.1 N). 97% tree, test split. AGBD md5 bbb956e0.
+    # "s2_display_product": the AGBD-features prediction was made from the 2020-08-30 scene, which
+    # is under the August Complex fire smoke plume (L2A cloud masks do not flag smoke; window AOT median
+    # 0.141, the highest of the six). By the user's decision the PANEL shows the pre-fire 2020-07-01
+    # scene of the same orbit instead (0.1% cloud, AOT 0.121), while the predictions are KEPT. So for
+    # this region alone the RGB is not the image the model consumed; the caption must say so (and the
+    # AGBD-features panel's hillslope striping under the plume area is partly the smoke).
+    {"tile": "10TDL", "region": "North America", "drmse": None,
+     "pairing": ("aef", "agbd", "cci"),
+     "rmse": {"aef": 102.48, "agbd": 109.64, "cci": 149.46, "n": 22535},
+     "s2_display_product": "S2B_MSIL2A_20200701T185919_N0500_R013_T10TDL_20230318T102719",
+     "crop": (434660.0, 4524870.0, 474950.0, 4565290.0)},
+    # 21NZD: interior French Guiana rainforest (3.1 N). 100% tree, TRAIN split (see above).
+    # S2 2020-08-22, full coverage. Its 40 km AEF window lies in the NEIGHBOURING UTM zone (22), so the
+    # AEF prediction was made in zone 22 and warped (nearest, 10 m, tile-aligned) into the tile CRS by
+    # comparison/maps/warp_aef_to_tile_crs.py; the CCI crop was built on that grid. The crop excludes
+    # the warp's edge wedges and a 2.76 km strip no zone-22 AEF file covers (39.94 x 37.18 km).
+    {"tile": "21NZD", "region": "South America", "drmse": None,
+     "pairing": ("aef", "agbd", "cci"),
+     "rmse": {"aef": 103.81, "agbd": 110.52, "cci": 159.41, "n": 4155},
+     "crop": (834890.0, 327900.0, 874830.0, 365080.0)},
+    # 37LCL: miombo woodland, southern Tanzania (8.6 S). 56% tree, test split. S2 2020-06-19
+    # (2.2% cloud, leaf-on). AGBD md5 c5255405.
+    {"tile": "37LCL", "region": "Africa", "drmse": None,
+     "pairing": ("aef", "agbd", "cci"),
+     "rmse": {"aef": 38.34, "agbd": 45.16, "cci": 52.59, "n": 6374},
+     "crop": (334830.0, 9025030.0, 374960.0, 9065180.0)},
 ]
+
+# Figure order: west to east, so the stacked regions read as a tour of the globe. Sorted here rather
+# than by reordering the entries above, whose comment blocks carry each tile's history.
+TILE_ORDER = ["10TDL", "21NZD", "32TPT", "37LCL", "49SBT", "59GPM"]
+TILES.sort(key = lambda spec : TILE_ORDER.index(spec["tile"]))
 
 # The Sentinel-2 row goes FIRST: it is the input the AGBD-features model actually consumed, so the
 # figure reads input -> two model outputs -> reference product. Its "key" is special-cased in the
@@ -232,11 +294,39 @@ ROWS = [
     {"key": "agbd",   "label": "AGBD features"},
     {"key": "ssl4eo", "label": "SSL4EO-MoCo (30 m)"},
     {"key": "cci",    "label": "ESA CCI v6.0"},
+    {"key": "resid",  "label": "Binned residuals"},
 ]
 
-# Rows drawn when --rows is not given. GEDI and SSL4EO are off by default: SSL4EO maps exist only
-# for the original three regions, and the GEDI row is a reference view rather than a result.
-DEFAULT_ROWS = ("s2", "aef", "agbd", "cci")
+# Rows drawn when --rows is not given. SSL4EO is off by default: its maps exist only for three of the
+# six regions.
+DEFAULT_ROWS = ("s2", "gedi", "aef", "agbd", "cci", "resid")
+
+# The AGB sources: the keys that share the t/ha colorbar, and the maps the residual panel can show.
+AGB_KEYS = ("gedi", "aef", "agbd", "ssl4eo", "cci")
+
+# Binned-residual panel ("resid"): prediction minus GEDI per GEDI-AGB bin, one box per map, in the
+# style of plot_binned_models.py (boxes without fliers, dashed zero line).
+# It is drawn from EXACTLY the cells each panel's RMSE label is computed on (paired_samples with the
+# tile's "pairing", inside the display crop), so the residuals and the RMSE numbers cannot disagree.
+# Bins are 100 t/ha wide: 50 gave 30+ boxes in a ~2.5 in panel. A bin with fewer than RESID_MIN_N
+# cells is left empty rather than drawn as a box of a handful of points (22NBL has n = 1,558 overall).
+# The y range is SHARED across regions so spreads are comparable between rows.
+RESID_BINS = np.arange(0, 501, 100)
+RESID_MIN_N = 20
+# Behind the boxes, a grey bar per bin gives the share of the region's GEDI cells in that bin (as a
+# % label too), so a reader can see how much of the region each residual box represents -- the
+# largest residuals sit in high-biomass bins that often hold a few % of cells. Heights are in axes
+# fraction (the tallest bar spans RESID_HIST_FRAC of the panel), so they need no second y axis and do
+# not touch the residual scale. Bars are drawn even for bins too sparse for a box. Shares are over ALL
+# paired cells, so they sum to < 100% if some GEDI values exceed the last bin edge.
+RESID_HIST_FRAC = 0.35
+RESID_HIST_COLOR = "0.80"
+# Colours of the published figures: AGBD features / AEF as in manuscript density.png (Okabe-Ito,
+# plot_density.py OVERLAY_COLORS), SSL4EO-MoCo likewise, ESA CCI as in the AGBRef figures
+# (comparison/agbref/comparison.py COLORS["cci"]).
+# AEF is GREEN here by the user's request (2026-10-06), unlike density.png where it is orange; the
+# Okabe-Ito green and orange are swapped with SSL4EO-MoCo so the two never share a colour.
+MODEL_COLORS = {"agbd": "#0072B2", "aef": "#009E73", "ssl4eo": "#E69F00", "cci": "#C02BF2"}
 
 # Directory of unzipped .SAFE products. The specific product is NOT globbed by tile -- it is derived
 # from the AGBD prediction filename (see find_s2), because this directory holds more than one
@@ -527,6 +617,16 @@ def water_mask(tile, bounds, crs, out_shape) :
     return np.isin(dst, WATER_CLASSES)
 
 
+_PAIRS = {}
+
+def gedi_pairs(spec) :
+    """paired_samples for a TILES entry (its "pairing", its display crop via gedi_scatter.CROP),
+    computed once and shared by the GEDI panel and the residual panel of the region."""
+    key = (spec["tile"], spec.get("pairing"))
+    if key not in _PAIRS : _PAIRS[key] = paired_samples(spec["tile"], spec.get("pairing"))
+    return _PAIRS[key]
+
+
 def draw_gedi(ax, spec, bounds) :
     """
     Draw the GEDI L4A reference cells of a column: one marker per cell, coloured by its GEDI AGBD on
@@ -551,7 +651,7 @@ def draw_gedi(ax, spec, bounds) :
     Returns:
     - int: the number of cells drawn.
     """
-    cx, cy, ref, _ = paired_samples(spec["tile"], spec.get("pairing"))
+    cx, cy, ref, _ = gedi_pairs(spec)
 
     n_expected = spec.get("rmse", {}).get("n")
     assert n_expected is None or len(ref) == n_expected, \
@@ -573,7 +673,7 @@ def draw_gedi(ax, spec, bounds) :
     # those RMSEs readable -- 5,086 footprints and 51,995 footprints do not support equal confidence.
     # Same slot and font as rmse_label, but a more opaque box: that one sits over viridis, this one
     # over a pale background, where alpha 0.55 washes the box out to light grey.
-    ax.text(0.035, 0.04, f"n = {len(ref):,} cells", transform = ax.transAxes,
+    ax.text(0.035, 0.04, f"n = {len(ref):,}", transform = ax.transAxes,
             ha = "left", va = "bottom", fontsize = 8.5, color = "white", fontweight = "bold",
             bbox = dict(boxstyle = "round,pad=0.25", fc = "black", ec = "none", alpha = 0.8))
     return len(ref)
@@ -595,6 +695,75 @@ def rmse_label(ax, spec, row_key) :
     ax.text(0.035, 0.04, f"RMSE {r:.0f} t/ha", transform = ax.transAxes,
             ha = "left", va = "bottom", fontsize = 8.5, color = "white", fontweight = "bold",
             bbox = dict(boxstyle = "round,pad=0.25", fc = "black", ec = "none", alpha = 0.55))
+
+
+def _darken(hex_color, factor = 0.6) :
+    """Box edge colour: the fill darkened, as in plot_binned_models.py."""
+    r, g, b = (int(hex_color[i : i + 2], 16) for i in (1, 3, 5))
+    return "#{:02x}{:02x}{:02x}".format(*(int(c * factor) for c in (r, g, b)))
+
+
+def draw_residuals(ax, spec, keys) :
+    """
+    Boxplots of (prediction - GEDI) per GEDI-AGB bin for the maps in `keys`, on the region's paired
+    GEDI cells (the RMSE-label set). Returns the (low, high) whisker extent drawn, for a shared ylim.
+
+    Args:
+    - ax: the panel's axes.
+    - spec (dict): a TILES entry.
+    - keys (list): AGB map keys to show, in ROWS order; each must be in the tile's pairing.
+    """
+    _, _, ref, preds = gedi_pairs(spec)
+    lbs, ubs = RESID_BINS[:-1], RESID_BINS[1:]
+    n_bins, n_keys = len(lbs), len(keys)
+    # No alternating bin bands here (unlike plot_binned_models.py): they hid the grey share bars.
+
+    # Share of the region's GEDI cells per bin, as background bars (see RESID_HIST_FRAC).
+    in_bin = [((ref >= lb) & (ref < ub)) if i < n_bins - 1 else ((ref >= lb) & (ref <= ub))
+              for i, (lb, ub) in enumerate(zip(lbs, ubs))]
+    share = np.array([m.sum() for m in in_bin]) / max(1, len(ref))
+    heights = RESID_HIST_FRAC * share / share.max() if share.max() > 0 else share
+    xa = blended_transform_factory(ax.transData, ax.transAxes)
+    ax.bar(range(n_bins), heights, width = 0.92, bottom = 0, transform = xa, color = RESID_HIST_COLOR,
+           alpha = 0.5, linewidth = 0, zorder = 1)
+    # Labels at the BASE of each bar (the part of the panel boxes reach least often), with a white
+    # halo so they stay legible where a low whisker does cross them.
+    halo = [pe.withStroke(linewidth = 1.6, foreground = "white")]
+    for i, sh in enumerate(share) :
+        ax.text(i, 0.015, f"{sh * 100:.0f}%", transform = xa, ha = "center", va = "bottom",
+                fontsize = 6, color = "0.30", zorder = 5, path_effects = halo)
+    width = 0.8 / max(1, n_keys)
+    offsets = (np.arange(n_keys) - (n_keys - 1) / 2.0) * width
+    lo, hi = np.inf, -np.inf
+    for k, off in zip(keys, offsets) :
+        res = preds[k] - ref
+        data, pos = [], []
+        for i, (lb, ub) in enumerate(zip(lbs, ubs)) :
+            sel = (ref >= lb) & (ref < ub) if i < n_bins - 1 else (ref >= lb) & (ref <= ub)
+            if sel.sum() >= RESID_MIN_N : data.append(res[sel]) ; pos.append(i + off)
+        if not data : continue
+        edge = _darken(MODEL_COLORS[k])
+        bp = ax.boxplot(data, positions = pos, widths = width * 0.82, patch_artist = True,
+                        showfliers = False, zorder = 3,
+                        boxprops = dict(facecolor = MODEL_COLORS[k], edgecolor = edge, linewidth = 0.8),
+                        whiskerprops = dict(color = edge, linewidth = 0.8),
+                        capprops = dict(color = edge, linewidth = 0.8),
+                        medianprops = dict(color = "black", linewidth = 1.1))
+        for w in bp["whiskers"] :
+            y = w.get_ydata() ; lo = min(lo, np.min(y)) ; hi = max(hi, np.max(y))
+    ax.axhline(0, color = "black", linestyle = "--", alpha = 0.6, linewidth = 0.8, zorder = 2)
+    ax.yaxis.grid(True, color = "0.85", linewidth = 0.6, zorder = 1)
+    ax.set_axisbelow(True)
+    ax.set_xlim(-0.5, n_bins - 0.5)
+    ax.set_xticks(range(n_bins))
+    ax.set_xticklabels([f"{lb}-{ub}" for lb, ub in zip(lbs, ubs)], fontsize = 7)
+    # Tick labels on the RIGHT: the left edge abuts the CCI map, with no room for labels. The panel was
+    # created with its ticks blanked (like every map panel), so the y locator is restored explicitly.
+    ax.yaxis.set_major_locator(MaxNLocator(nbins = 5, integer = True))
+    ax.yaxis.tick_right()
+    ax.tick_params(axis = "y", labelsize = 7.5, length = 2)
+    ax.tick_params(axis = "x", length = 2)
+    return lo, hi
 
 
 ####################################################################################################
@@ -690,8 +859,13 @@ def panel_source(spec, key, col_bounds, col_crs) :
     - tuple, CRS: the bounds and CRS to crop to.
     """
     tile = spec["tile"]
-    if key == "s2"     : path = find_s2(find_agbd(tile))
+    if key == "s2" :
+        # Normally the scene the AGBD-features prediction was made from (find_s2 derives it from the
+        # prediction filename). A "s2_display_product" overrides that for display only -- see 10TDL.
+        disp = spec.get("s2_display_product")
+        path = find_s2(join(PRED_AGBD, f"{disp}_NA.tif") if disp else find_agbd(tile))
     elif key == "gedi" : path = col_bounds
+    elif key == "resid" : path = col_bounds
     elif key == "aef"  : path = join(PRED_AEF, f"{tile}.tif")
     elif key == "agbd" : path = find_agbd(tile)
     elif key == "ssl4eo" : path = join(PRED_SSL4EO, f"{tile}.tif")
@@ -706,7 +880,7 @@ def panel_missing(key, path, col_bounds) :
     "crop"), so a None window -- i.e. no AEF prediction for the tile -- makes the whole region
     undrawable, not just its AEF panel."""
     if path is None or col_bounds is None : return True
-    if key in ("s2", "gedi") : return False
+    if key in ("s2", "gedi", "resid") : return False
     return not exists(path)
 
 
@@ -865,8 +1039,12 @@ def make_figure(out_path, dpi, rows, tiles, regions_as_rows = True, allow_missin
 
     # The scale bar goes on the S2 panel if shown, else on the first map panel. GEDI cannot carry
     # it: that panel is drawn in map coordinates, while add_scalebar works in pixel indices.
-    bar_keys = [row["key"] for row in rows if row["key"] != "gedi"]
+    bar_keys = [row["key"] for row in rows if row["key"] not in ("gedi", "resid")]
     bar_key = "s2" if "s2" in bar_keys else (bar_keys[0] if bar_keys else None)
+
+    # Maps the residual panel shows: the enabled AGB map rows (not GEDI itself), in ROWS order.
+    resid_keys = [row["key"] for row in rows if row["key"] in AGB_KEYS and row["key"] != "gedi"]
+    resid_axes, resid_lo, resid_hi = [], np.inf, -np.inf
 
     for t, spec in enumerate(tiles) :
         tile = spec["tile"]
@@ -878,7 +1056,12 @@ def make_figure(out_path, dpi, rows, tiles, regions_as_rows = True, allow_missin
             ax.set_xticks([]) ; ax.set_yticks([])
 
             path, bounds, crs = sources[(tile, row["key"])]
-            if panel_missing(row["key"], path, col_bounds) :
+            if row["key"] == "resid" and not panel_missing("resid", path, col_bounds) :
+                keys = [k for k in resid_keys if k in (spec.get("pairing") or ())]
+                lo, hi = draw_residuals(ax, spec, keys)
+                resid_lo, resid_hi = min(resid_lo, lo), max(resid_hi, hi)
+                resid_axes.append((ax, t, s))
+            elif panel_missing(row["key"], path, col_bounds) :
                 ax.text(0.5, 0.5, f'[{row["label"]}\n{tile}]\nnot found', ha = "center",
                         va = "center", fontsize = 9, color = "0.5", transform = ax.transAxes)
                 ax.set_facecolor("0.95")
@@ -890,8 +1073,10 @@ def make_figure(out_path, dpi, rows, tiles, regions_as_rows = True, allow_missin
             # other. The region label is just region (tile): per-model GEDI RMSE sits on each panel.
             if regions_as_rows :
                 if t == 0 : ax.set_title(row["label"], fontsize = 11, fontweight = "bold", pad = 6)
+                # Horizontal, on two lines (region / tile), so it reads without tilting the head.
                 if s == 0 : ax.set_ylabel(region_label.replace("  ", "\n"), fontsize = 11,
-                                          fontweight = "bold", labelpad = 8)
+                                          fontweight = "bold", rotation = 0, ha = "right",
+                                          va = "center", labelpad = 10)
             else :
                 if s == 0 : ax.set_title(region_label, fontsize = 11, fontweight = "bold", pad = 8)
                 if t == 0 : ax.set_ylabel(row["label"], fontsize = 12, fontweight = "bold",
@@ -899,7 +1084,37 @@ def make_figure(out_path, dpi, rows, tiles, regions_as_rows = True, allow_missin
 
     # Shared colorbar, spanning ONLY the sources it actually describes. The Sentinel-2 row is a true
     # colour composite on no such scale, so running the bar past it would imply t/ha applies there.
-    agb = [i for i, row in enumerate(rows) if row["key"] != "s2"]
+    # Residual axes: one shared y range (whisker extent, padded), x tick labels only on the outer
+    # edge, units on the column title.
+    if resid_axes :
+        pad = 0.05 * (resid_hi - resid_lo)
+        # Headroom above the highest whisker for the per-panel model key, so the key never sits on
+        # a box (21NZD's CCI reaches the top of the shared range).
+        key_room = 0.17 * (resid_hi - resid_lo)
+        last = max(t for _, t, _ in resid_axes)
+        # Model key on EVERY residual panel, one row along its top. Short labels so three fit in a
+        # ~2.3 in panel; the grey share bars need no key (their % labels say what they are).
+        short = {"aef" : "AEF", "agbd" : "AGBD features", "ssl4eo" : "SSL4EO", "cci" : "ESA CCI"}
+        handles = [Patch(facecolor = MODEL_COLORS[k], edgecolor = _darken(MODEL_COLORS[k]), label = short[k])
+                   for k in resid_keys]
+        # Ticks only over the data range: the key strip above it would otherwise get a tick (and a
+        # grid line) at a value no box reaches.
+        ticks = [v for v in MaxNLocator(nbins = 5, integer = True).tick_values(resid_lo - pad, resid_hi + pad)
+                 if resid_lo - pad <= v <= resid_hi + pad]
+        for ax, t, s in resid_axes :
+            ax.set_ylim(resid_lo - pad, resid_hi + pad + key_room)
+            ax.set_yticks(ticks)
+            ax.legend(handles = handles, loc = "upper center", ncol = len(handles), fontsize = 6.5,
+                      frameon = False, handlelength = 1.0, handleheight = 0.8, handletextpad = 0.35,
+                      columnspacing = 0.8, borderaxespad = 0.25)
+            if regions_as_rows :
+                if t != last : ax.tick_params(axis = "x", labelbottom = False)
+                else : ax.set_xlabel("GEDI AGB bin [t/ha]", fontsize = 9)
+                if t == 0 : ax.set_title("Binned residuals\n"
+                                         r"$\mathbf{AGB}_{\mathbf{pred}} - \mathbf{AGB}_{\mathbf{GEDI}}$ [t/ha]",
+                                         fontsize = 11, fontweight = "bold", pad = 6)
+
+    agb = [i for i, row in enumerate(rows) if row["key"] in AGB_KEYS]
     if agb :
         if regions_as_rows :
             cbar_ax = fig.add_subplot(gs[len(tiles), min(agb) : max(agb) + 1])

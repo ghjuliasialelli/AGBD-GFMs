@@ -68,6 +68,14 @@ CCI_BLOCKS = {
     # carry an honest per-tile metric. 32TPT has 165,788 footprints in the same-sized window
     # (measured, not assumed) and its AEF tiles exist in tile_to_aefiles.pkl.
     "32TPT" : "N50E010",
+    # North America / South America / Africa, added 2026-10-05 (picked by measured GEDI coverage
+    # and tree cover; see make_map_figure.py TILES for the selection history). 21NZD's AEF
+    # prediction was warped from the neighbouring UTM zone onto the tile's own grid
+    # (warp_aef_to_tile_crs.py) BEFORE this crop, so the CCI crop lands on that tile-CRS grid like
+    # every other row of the region.
+    "10TDL" : "N50W130",
+    "21NZD" : "N10W060",
+    "37LCL" : "N00E030",
 }
 
 NODATA = -9999.0

@@ -24,8 +24,8 @@ Run:    python plot_regions.py --model <model_file> --baseline <baseline_model_f
                                --model_label <label> --baseline_label <label>
                                --metric <rmse|mae|me> --saving_dir <saving_directory>
 
-e.g.  python plot_regions.py  --model results/nico_film_59620113-1_59620113-1_59620113-1_2019-2020_nooverlap.h5
-                              --baseline results/nico_film_59620098-1_59620098-1_59620098-1_2019-2020_nooverlap.h5
+e.g.  python plot_regions.py  --model model/eval/results/nico_film_59620113-1_59620113-1_59620113-1_2019-2020_nooverlap.h5
+                              --baseline model/eval/results/nico_film_59620098-1_59620098-1_59620098-1_2019-2020_nooverlap.h5
                               --model_label AEF --baseline_label 'AGBD features'
 
 """

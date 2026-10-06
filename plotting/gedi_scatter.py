@@ -41,6 +41,9 @@ DAY1 = int((np.datetime64("2020-12-31") - EPOCH).astype(int))
 
 # Columns = tiles (region order matches the map figure); rows = the four AGB maps.
 TILE_ORDER = [("59GPM", "Australasia"), ("32TPT", "Europe"), ("49SBT", "Asia")]
+# Tiles added to the map figure 2026-10-05 (10TDL/37LCL test split; 21NZD train split, user's call). They have no SSL4EO map, so the 4-model scatter in main()
+# does not cover them; their RMSEs come from paired_samples(tile, ("aef", "agbd", "cci")).
+NEW_TILES = [("10TDL", "North America"), ("21NZD", "South America"), ("37LCL", "Africa")]
 
 # Per-tile display crop (must match make_map_figure.py TILES "crop" and metrics_4model.py CROP), so
 # the scatter is scored over exactly the pixels the map panel shows. None = whole AEF window.
@@ -48,6 +51,9 @@ CROP = {
     "59GPM": (637460.0, 5137000.0, 666170.0, 5165710.0),
     "32TPT": None,
     "49SBT": (234297.1, 3724522.1, 275379.7, 3765694.6),
+    "10TDL": (434660.0, 4524870.0, 474950.0, 4565290.0),
+    "21NZD": (834890.0, 327900.0, 874830.0, 365080.0),
+    "37LCL": (334830.0, 9025030.0, 374960.0, 9065180.0),
 }
 MODELS = [("aef", "AEF"), ("agbd", "AGBD features"),
           ("ssl4eo", "SSL4EO-MoCo (30 m)"), ("cci", "ESA CCI v6.0")]
@@ -62,7 +68,7 @@ def sample1(path, xy) :
         return np.array([v[0] for v in src.sample(xy, indexes=[1])], dtype="float64")
 
 
-def paired_samples(tile, models = None) :
+def paired_samples(tile, models = None, crop = None) :
     """Return (cx, cy, ref, {model_key: pred}) over the display-window, water-masked,
     all-models-valid GEDI cells -- i.e. exactly the reference set every panel's RMSE is computed on.
 
@@ -83,7 +89,9 @@ def paired_samples(tile, models = None) :
     """
     b = json.load(open(f"{GEDI_DIR}/bboxes.json"))[tile]
     crs = b["crs"]
-    win = CROP.get(tile) if CROP.get(tile) is not None else b["aef_utm"]   # display scope, matches the map
+    # `crop` overrides CROP[tile]: used to score a candidate display crop before it is written into
+    # CROP / make_map_figure.TILES.
+    win = crop if crop is not None else (CROP.get(tile) if CROP.get(tile) is not None else b["aef_utm"])   # display scope, matches the map
     paths = {"aef": b["aef_path"], "agbd": b["agbd_path"],
              "ssl4eo": SSL.format(tile), "cci": CCI.format(tile)}
     keys = [k for k, _ in MODELS] if models is None else list(models)

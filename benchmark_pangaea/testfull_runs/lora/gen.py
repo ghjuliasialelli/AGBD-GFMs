@@ -10,8 +10,10 @@
 #
 # No `_evalbig` copy is needed (unlike evalbig_runs/): a dataset=agbd run already tests
 # on AGBD-test. But the saved config pins dataset.root_path_cluster to the TRAINING job's
-# $TMPDIR, and run.py reloads that config from ckpt_dir, so a CLI override would be lost.
-# The generated launcher therefore refuses to start until that path has been fixed.
+# $TMPDIR, and run.py reloads that config from ckpt_dir, which drops ordinary CLI overrides.
+# The launcher therefore passes the test-time data path through `test_overrides`, which
+# run.py merges on top of the reloaded config (pangaea-bench configs/test.yaml). The saved
+# config.yaml is left untouched, and the override is logged to the run's test.log.
 
 import os
 
@@ -24,7 +26,8 @@ ROOT_PATH_CLUSTER = '/cluster/scratch/gsialelli'
 
 # Every launcher also dumps the per-sample centre-pixel (prediction, label) pairs of the test set to
 # <DUMP_DIR>/<run>_agbd_test.h5, via AGBD_DUMP_H5 (pangaea/engine/evaluator.py, commit cbce724 on
-# agbd-release), for the binned / density analyses in plotting/. With 4 ranks, DistributedSampler pads
+# agbd-release), for the binned / density analyses in plotting/. Copy it back to
+# benchmark_pangaea/results/ in this repo. With 4 ranks, DistributedSampler pads
 # the 2,807,977 test samples to a multiple of 4, so the file holds 3 duplicated samples; the sampler also
 # shuffles, so the order differs from the fcn_film result files.
 DUMP_DIR = '/cluster/scratch/gsialelli/agbd_dumps'
@@ -39,19 +42,15 @@ base_text = """#!/bin/bash
 #SBATCH --job-name=pangaea
 #SBATCH --gpus=rtx_4090:4
 
-"""
-
-guard_text = """# The run was trained with dataset.root_path_cluster=${{TMPDIR}}; the test job reads from
-# {root}. Refuse to start on a stale path rather than fail mid-load.
-config_yaml={run}/configs/config.yaml
-if ! grep -qE "root_path_cluster: +{root} *$" "$config_yaml"; then
-    echo "root_path_cluster in $config_yaml is not {root}:" >&2
-    grep -n "root_path_cluster" "$config_yaml" >&2
-    echo "fix it with: perl -i -pe 's|(root_path_cluster: ).*|\\${{1}}{root}|' $config_yaml" >&2
+# The data path below is passed via test_overrides, which only pangaea-bench's run.py from the
+# test_overrides commit onwards honours; an older checkout would silently ignore it and fail at data load.
+if ! grep -q "test_overrides" pangaea/run.py; then
+    echo "pangaea/run.py does not support test_overrides: update the pangaea-bench checkout (agbd-release)." >&2
     exit 1
 fi
 
 """
+
 
 
 def read_configs(path):
@@ -92,7 +91,8 @@ if not_full:
 encoders = []
 for config in configs:
 
-    command = f"""AGBD_DUMP_H5={DUMP_DIR}/{config}_agbd_test.h5 HYDRA_FULL_ERROR=1 TQDM_DISABLE=1 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=4 pangaea/run.py --config-name=test ckpt_dir={config}
+    command = f"""AGBD_DUMP_H5={DUMP_DIR}/{config}_agbd_test.h5 HYDRA_FULL_ERROR=1 TQDM_DISABLE=1 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=4 pangaea/run.py --config-name=test ckpt_dir={config} \\
+    ++test_overrides.dataset.root_path_cluster={ROOT_PATH_CLUSTER}
 """
 
     encoder = encoder_of(config)
@@ -104,7 +104,6 @@ for config in configs:
 
     with open(os.path.join(path_script, f"{encoder}.sh"), "w") as f:
         f.write(base_text)
-        f.write(guard_text.format(run=config, root=ROOT_PATH_CLUSTER))
         f.write(command)
 
 # The sbatch hints: one per generated launcher. These are run from the pangaea-bench fork.

@@ -128,7 +128,9 @@ not need to hunt for them:
 | `data/agbd_lite/tiles_per_region.pkl`, `tile_to_region.pkl`, `tile_to_file.pkl` | tile ↔ region ↔ `.h5` mappings. |
 | `data/agbd_lite/indices/subsampled_indices_*.pkl` | the exact indices sampled to build AGBD-Lite, per region. |
 | `data/agbd_lite/eval/weights/*.ckpt` | trained supervised (NicoNet+FiLM) checkpoints. |
-| `data/agbd_lite/eval/results/*.h5` | cached predictions, so the plots can be reproduced without a GPU. |
+| `model/eval/results/*.h5` | cached per-sample predictions of the supervised models on the full AGBD test set (`model/eval.py` output), so the plots can be reproduced without a GPU. |
+| `data/agbd_lite/eval/results/*.h5` | the same, on the AGBD-Lite test set. |
+| `benchmark_pangaea/results/*.h5` | per-sample centre-pixel test predictions of PANGAEA models on the full AGBD test set (written with `AGBD_DUMP_H5`), for the same plots. |
 
 
 ## Running the experiments
