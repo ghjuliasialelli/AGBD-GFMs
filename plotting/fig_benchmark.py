@@ -48,6 +48,9 @@ SUP_A = {"all": 59.02, "s2": 66.51}
 
 # --- (b) Full dataset, AEF with heads of increasing capacity (3 runs) -----
 EMB_B = {"LP": 56.67, "MLP": 52.22, "fcn_film": 50.92}
+# AEF+ (AEF + land cover, slope, aspect, sin/cos lat/lon; Sec. 4) with the fcn_film head: 50.79 +- 0.01
+# over 3 runs (Table 1). Like the rows above, only the mean is drawn.
+EMB_B_PLUS = {"fcn_film": 50.79}
 # 58.57 is quoted in Sec. 5.1 / 6.1 / 6.2 but is not in Table 1
 SUP_B = {"all": 53.73, "s2": 58.57}
 
@@ -105,8 +108,11 @@ def rows_panel_a():
 
 
 def rows_panel_b():
-    return [(f"AEF + {HEAD_LABEL[h]}", dict(frozen=v))
+    rows = [(f"AEF + {HEAD_LABEL[h]}", dict(frozen=v))
             for h, v in EMB_B.items() if v is not None]
+    rows += [(f"AEF$^{{+}}$ + {HEAD_LABEL[h]}", dict(frozen=v))
+             for h, v in EMB_B_PLUS.items() if v is not None]
+    return rows
 
 
 # =============================== PLOT ===============================

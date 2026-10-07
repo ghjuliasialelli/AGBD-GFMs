@@ -694,8 +694,8 @@ print(f"Per-plot values written to {PERPLOT_CSV} ({len(results['agbref'])} rows)
 if PLOT and os.environ.get("AGBREF_NO_PLOT") != "1":
 
     COLORS = {
-        "nico": "#0084FF",  # blue
-        "cci":  "#C02BF2",  # orange
+        "nico": "#117733",  # AEF (Tol muted green, user-set 2026-10-06)
+        "cci":  "#CC6677",  # ESA CCI (Tol muted rose)
     }
 
     BIN_EDGES = np.arange(0, 550, 25)

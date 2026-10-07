@@ -19,6 +19,10 @@
 # is its checkpoint__best.pth. LoRA runs are slower still (encoder in the autograd graph).
 
 import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from staging import STAGE_TRAIN  # noqa: E402
 
 path_script = os.path.dirname(os.path.abspath(__file__))
 REGIME = os.path.basename(path_script)
@@ -33,19 +37,7 @@ base_text = """#!/bin/bash
 #SBATCH --job-name=pangaea
 #SBATCH --gpus=rtx_4090:4
 
-# Move all of the necessary data to $TMPDIR
-# 'AGBD-Lite-val.h5' (validation runs on the Lite val split: agbd.yaml has eval_lite: True)
-rclone copy /cluster/work/igp_psr/gsialelli/Data/patches/AGBD-Lite/AGBD-Lite-val.h5 ${TMPDIR} --transfers 16 --checkers 32
-# all the .h5 files for training
-rclone copy /cluster/work/igp_psr/gsialelli/Data/patches/ ${TMPDIR} --include "*v4_*-20.h5" --transfers 16 --checkers 32
-# biomes_splits_to_name.pkl
-cp /cluster/work/igp_psr/gsialelli/Data/AGB/biomes_splits_to_name.pkl ${TMPDIR}
-# 'tiles_per_region.pkl'
-cp /cluster/work/igp_psr/gsialelli/EcosystemAnalysis/Models/Biomes/helper/tiles_per_region.pkl ${TMPDIR}
-# 'AEF_overlaps.pkl'
-cp /cluster/work/igp_psr/gsialelli/AGBD-GFM/aef-dwn/AEF_overlaps.pkl ${TMPDIR}
-
-"""
+""" + STAGE_TRAIN + "\n"
 
 # Per-regime run.py overrides and the encoders scaled up to full AGBD.
 REGIMES = {

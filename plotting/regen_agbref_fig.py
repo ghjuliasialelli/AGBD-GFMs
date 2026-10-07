@@ -22,7 +22,9 @@ nico   = np.array([float(r["nico_mean"]) for r in rows])
 cci    = np.array([float(r["cci_mean"]) for r in rows])
 print(f"loaded {len(rows)} plots")
 
-COLORS = {"nico": "#0084FF", "cci": "#C02BF2"}
+# Model colours (Paul Tol 'muted', user-set 2026-10-06): AGBD #332288, AEF #117733, AEF+ #44AA99,
+# other GFM (SSL4EO / TerraMind) #88CCEE, ESA CCI #CC6677.
+COLORS = {"nico": "#117733", "cci": "#CC6677"}   # nico = AEF
 BIN_EDGES = np.arange(0, 550, 25)
 SIZE_THRESHOLDS = [10, 20, 50, 100, 200]
 SIZE_VALUES = [10, 25, 50, 90, 140, 200]

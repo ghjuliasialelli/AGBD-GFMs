@@ -321,12 +321,9 @@ RESID_MIN_N = 20
 # paired cells, so they sum to < 100% if some GEDI values exceed the last bin edge.
 RESID_HIST_FRAC = 0.35
 RESID_HIST_COLOR = "0.80"
-# Colours of the published figures: AGBD features / AEF as in manuscript density.png (Okabe-Ito,
-# plot_density.py OVERLAY_COLORS), SSL4EO-MoCo likewise, ESA CCI as in the AGBRef figures
-# (comparison/agbref/comparison.py COLORS["cci"]).
-# AEF is GREEN here by the user's request (2026-10-06), unlike density.png where it is orange; the
-# Okabe-Ito green and orange are swapped with SSL4EO-MoCo so the two never share a colour.
-MODEL_COLORS = {"agbd": "#0072B2", "aef": "#009E73", "ssl4eo": "#E69F00", "cci": "#C02BF2"}
+# Model colours (Paul Tol 'muted', user-set 2026-10-06): AGBD #332288, AEF #117733, AEF+ #44AA99,
+# other GFM (SSL4EO / TerraMind) #88CCEE, ESA CCI #CC6677.
+MODEL_COLORS = {"agbd": "#332288", "aef": "#117733", "ssl4eo": "#88CCEE", "cci": "#CC6677"}
 
 # Directory of unzipped .SAFE products. The specific product is NOT globbed by tile -- it is derived
 # from the AGBD prediction filename (see find_s2), because this directory holds more than one
@@ -703,6 +700,13 @@ def _darken(hex_color, factor = 0.6) :
     return "#{:02x}{:02x}{:02x}".format(*(int(c * factor) for c in (r, g, b)))
 
 
+def _median_color(hex_color) :
+    """White on dark fills, black on light ones, so the median line stays visible (a black median
+    disappears on the dark AGBD indigo #332288)."""
+    r, g, b = (int(hex_color[i : i + 2], 16) / 255 for i in (1, 3, 5))
+    return "white" if 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.45 else "black"
+
+
 def draw_residuals(ax, spec, keys) :
     """
     Boxplots of (prediction - GEDI) per GEDI-AGB bin for the maps in `keys`, on the region's paired
@@ -748,7 +752,7 @@ def draw_residuals(ax, spec, keys) :
                         boxprops = dict(facecolor = MODEL_COLORS[k], edgecolor = edge, linewidth = 0.8),
                         whiskerprops = dict(color = edge, linewidth = 0.8),
                         capprops = dict(color = edge, linewidth = 0.8),
-                        medianprops = dict(color = "black", linewidth = 1.1))
+                        medianprops = dict(color = _median_color(MODEL_COLORS[k]), linewidth = 1.1))
         for w in bp["whiskers"] :
             y = w.get_ydata() ; lo = min(lo, np.min(y)) ; hi = max(hi, np.max(y))
     ax.axhline(0, color = "black", linestyle = "--", alpha = 0.6, linewidth = 0.8, zorder = 2)

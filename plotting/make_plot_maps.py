@@ -81,8 +81,10 @@ SCALEBAR_COLOR = "white"
 SCALEBAR_OUTLINE = "black"
 
 # Source colours: identical to comparison.py's scatter figure so the two figures read as one system.
-C_OURS = "#0084FF"   # AEF / nico_film
-C_CCI = "#C02BF2"    # ESA CCI
+# Model colours (Paul Tol 'muted', user-set 2026-10-06): AGBD #332288, AEF #117733, AEF+ #44AA99,
+# other GFM (SSL4EO / TerraMind) #88CCEE, ESA CCI #CC6677.
+C_OURS = "#117733"   # AEF / nico_film
+C_CCI = "#CC6677"    # ESA CCI
 
 # Default example plots: spread across the AGBRef range, in the published retained set (no Japan,
 # |lat| <= 55 so the 0.1 deg cell is not latitude-shrunk). Chosen to be representative, not

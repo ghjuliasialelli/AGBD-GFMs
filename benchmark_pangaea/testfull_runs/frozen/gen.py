@@ -11,18 +11,21 @@
 # No `_evalbig` copy is needed (unlike evalbig_runs/): a dataset=agbd run already tests
 # on AGBD-test. But the saved config pins dataset.root_path_cluster to the TRAINING job's
 # $TMPDIR, and run.py reloads that config from ckpt_dir, which drops ordinary CLI overrides.
-# The launcher therefore passes the test-time data path through `test_overrides`, which
-# run.py merges on top of the reloaded config (pangaea-bench configs/test.yaml). The saved
-# config.yaml is left untouched, and the override is logged to the run's test.log.
+# The launcher therefore stages the data to $TMPDIR exactly as the training job did (../../staging.py)
+# and passes that path through `test_overrides`, which run.py merges on top of the reloaded config
+# (pangaea-bench configs/test.yaml). The saved config.yaml is left untouched, and the override is
+# logged to the run's test.log.
 
 import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from staging import STAGE_TEST  # noqa: E402
 
 path_script = os.path.dirname(os.path.abspath(__file__))
 REGIME = os.path.basename(path_script)
 configs_file = os.path.join(path_script, '..', '..', 'configs', f'full_{REGIME}.txt')
 
-# Where the full AGBD data lives for the test job (no $TMPDIR staging here).
-ROOT_PATH_CLUSTER = '/cluster/scratch/gsialelli'
 
 base_text = """#!/bin/bash
 #SBATCH --nodes=1
@@ -41,7 +44,7 @@ if ! grep -q "test_overrides" pangaea/run.py; then
     exit 1
 fi
 
-"""
+""" + STAGE_TEST + "\n"
 
 
 
@@ -84,7 +87,7 @@ encoders = []
 for config in configs:
 
     command = f"""HYDRA_FULL_ERROR=1 TQDM_DISABLE=1 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=4 pangaea/run.py --config-name=test ckpt_dir={config} \\
-    ++test_overrides.dataset.root_path_cluster={ROOT_PATH_CLUSTER}
+    ++test_overrides.dataset.root_path_cluster=${{TMPDIR}}
 """
 
     encoder = encoder_of(config)

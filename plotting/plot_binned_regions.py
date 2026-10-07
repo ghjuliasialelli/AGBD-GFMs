@@ -43,9 +43,10 @@ JOBS = {
     'SouthAmerica': {'AGBD features': '60866344-3', 'AEF': '64424736-3', 'AEF$^+$': '64424805-3'},
 }
 
-# AGBD features in the repo blue (comparison/agbref/comparison.py); the two AEF variants in two
-# shades of green, dark for AEF and light for AEF+, so they read as one family.
-COLORS = {'AGBD features': '#0084FF', 'AEF': 'green', 'AEF$^+$': 'yellowgreen'}
+# Model colours (Paul Tol 'muted', user-set 2026-10-06): AGBD #332288, AEF #117733, AEF+ #44AA99,
+# other GFM (SSL4EO / TerraMind) #88CCEE, ESA CCI #CC6677.
+# The two AEF variants are a dark green and a teal, so they read as one family.
+COLORS = {'AGBD features': '#332288', 'AEF': '#117733', 'AEF$^+$': '#44AA99'}
 
 # Short names for the per-panel legend box. Padded to a common width and rendered in a monospace
 # font so the RMSE values line up vertically.

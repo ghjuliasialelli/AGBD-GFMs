@@ -124,7 +124,10 @@ def conditional_quantiles(preds, labels, max_agb, width, pcts=(10, 50, 90)):
 SIZE_THRESHOLDS = [10e3, 20e3, 50e3, 100e3, 500e3]
 SIZE_VALUES = [10, 25, 50, 90, 140, 200]
 SIZE_LABELS = ['< 10k', '10k–20k', '20k–50k', '50k–100k', '100k–500k', '> 500k']
-OVERLAY_COLORS = ['#0072B2', '#E69F00', '#009E73']      # same as plot_binned_models.py / binned.png
+# Model colours (Paul Tol 'muted', user-set 2026-10-06): AGBD #332288, AEF #117733, AEF+ #44AA99,
+# other GFM (SSL4EO / TerraMind) #88CCEE, ESA CCI #CC6677.
+# Assigned by --model ORDER: AGBD features, AEF, other GFM (the published command's order).
+OVERLAY_COLORS = ['#332288', '#117733', '#88CCEE']
 
 
 def marker_size(c):
