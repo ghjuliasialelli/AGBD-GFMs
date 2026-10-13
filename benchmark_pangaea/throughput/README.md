@@ -8,7 +8,7 @@ Measures inference throughput (samples/s), latency, and peak GPU memory for each
 | `throughput.py` | the benchmark itself; one encoder per invocation |
 | `gen.py` | prints the 11 `throughput.py` commands (regenerates `run_all.sh`) |
 | `run_all.sh` | the 11 commands, as run for the paper |
-| `../../plotting/plot_throughput.py` | renders the Pareto figure; measured numbers are inlined at the top |
+| `../../plotting/helper/plot_throughput.py` | renders the Pareto figure; measured numbers are inlined at the top |
 | `../../plotting/img/pareto_color.png` | the figure as published |
 
 ## Running it
@@ -25,10 +25,10 @@ cp /path/to/AGBD-GFMs/benchmark_pangaea/throughput/run_all.sh .
 bash run_all.sh
 ```
 
-Copy the printed throughput values into the `models` dict at the top of `plotting/plot_throughput.py`, then:
+Copy the printed throughput values into the `models` dict at the top of `plotting/helper/plot_throughput.py`, then:
 
 ```bash
-python plotting/plot_throughput.py --mode color   # writes plotting/img/pareto_color.png
+python plotting/helper/plot_throughput.py --mode color   # writes plotting/img/pareto_color.png
 ```
 
 `plot_throughput.py` has no dependency on the fork and runs anywhere.
