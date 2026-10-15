@@ -79,6 +79,8 @@ manuscript/
 experiments/generalization/eval_ablations/*
 experiments/generalization/EXTENDED.md
 
+experiments/spatial_autocorrelation/*
+
 technical_details/from_manuscript.md
 
 data/aef/dwn_errors/
@@ -86,3 +88,7 @@ data/aef/dwn_errors/
 model/runs/upernet/
 
 benchmark_pangaea/results/20260930_080105_f8cb5c_terramind_tiny_lora_reg_upernet_agbd_agbd_test.h5
+
+data/aef/distribution/training_coordinates.csv
+
+model/wandb/*
