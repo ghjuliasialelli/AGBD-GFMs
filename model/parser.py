@@ -73,6 +73,7 @@ def setup_parser():
 
     parser.add_argument("--aef", type = str2bool, default = 'false', help = 'Whether to include the AEF patches in the input.')
     parser.add_argument("--tessera", type = str2bool, default = 'false', help = 'Whether to include the TESSERA embeddings in the input. Currently only supported with --lite.')
+    parser.add_argument("--olmo", type = str2bool, default = 'false', help = 'Whether to include the OlmoEarth v1.3 embeddings in the input. Currently only supported with --lite.')
     parser.add_argument("--drop_overlaps", type = str2bool, default = 'false', help = 'Whether to drop the AGBD test patches that are in the AEF train set.')
 
     parser.add_argument("--hold_out_region", type = StrOrNone, default = None, help = 'Whether to hold out a region for testing.')

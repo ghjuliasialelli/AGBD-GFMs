@@ -26,6 +26,7 @@ np.seterr(divide = 'ignore')
 
 # Define the nodata values for each data source
 NODATAVALS = {'S2_bands' : 0, 'CH': 255, 'ALOS_bands': 0, 'DEM': -9999, 'LC': 255}
+OLMO_NODATA = -128
 
 continent_to_region = {'NorthAmerica': ['California', 'Cuba'], 'SouthAmerica': ['Paraguay', 'FrenchGuiana'],
     'Africa': ['UnitedRepublicofTanzania', 'Ghana'], 'Europe': ['Austria', 'Greece'],
@@ -574,6 +575,7 @@ class GEDIDataset(Dataset):
         self.h5_path, self.norm_path, self.mapping, self.embed_path = paths['h5'], paths['norm'], paths['map'], paths['embeddings']
         self.aef_h5_path, self.aef_norm_path = paths['aef_h5'], paths['aef_norm']
         self.tessera_h5_path, self.tessera_norm_path = paths['tessera_h5'], paths['tessera_norm']
+        self.olmo_h5_path, self.olmo_norm_path = paths.get('olmo_h5'), paths.get('olmo_norm')
         self.mode = mode
         self.chunk_size = chunk_size
         self.years = years
@@ -645,6 +647,7 @@ class GEDIDataset(Dataset):
         self.crop = args.crop
         self.aef = args.aef
         self.tessera = args.tessera
+        self.olmo = getattr(args, 'olmo', False) # absent from the configs of runs that predate it
         self.predict = args.predict
 
         # Whether to mask the Sentinel-2 data for this mode
@@ -783,6 +786,18 @@ class GEDIDataset(Dataset):
             with open(join(self.tessera_norm_path, tessera_stats_fname), mode = 'rb') as f:
                 self.norm_values['TESSERA'] = pickle.load(f)
             self.tessera_handle = h5py.File(join(self.tessera_h5_path, tessera_fname), 'r')
+
+        # Prepare for using OlmoEarth embeddings
+        if self.olmo :
+            assert self.lite, "OlmoEarth embeddings are currently only supported with the Lite dataset."
+            assert not (self.lite_eval_big and self.mode == 'test'), "OlmoEarth embeddings are not available for the non-Lite test set."
+            olmo_fname = f'OLMO-Lite-{self.mode}.h5'
+            olmo_stats_fname = "OLMO_statistics_2020_global_lite.pkl"
+            print(f'Using file: {olmo_stats_fname} for OlmoEarth normalization values.')
+            with open(join(self.olmo_norm_path, olmo_stats_fname), mode = 'rb') as f:
+                self.norm_values['OLMO'] = pickle.load(f)
+            self.olmo_handle = h5py.File(join(self.olmo_h5_path, olmo_fname), 'r')
+            assert int(self.olmo_handle.attrs['year']) == 2020 and self.olmo_handle['done'][:].all(), f"{olmo_fname} is not a finished 2020 build"
 
 
     def __len__(self):
@@ -1079,6 +1094,15 @@ class GEDIDataset(Dataset):
             tessera_data = np.nan_to_num(tessera_data, nan = 0.0)
             tessera_data = normalize_data(tessera_data, self.norm_values['TESSERA'], 'mean_std', 0, False)
             data.extend([tessera_data])
+
+        # OlmoEarth embeddings: int8 signed-square-root quantised, -128 = nodata (NOT TESSERA's emb * scale)
+        if self.olmo :
+            olmo_q = self.olmo_handle['embeddings'][idx, self.center_x - self.window_size : self.center_x + self.window_size + 1, self.center_y - self.window_size : self.center_y + self.window_size + 1, :]
+            olmo_data = olmo_q.astype(np.float32)
+            olmo_data = np.sign(olmo_data) * (np.abs(olmo_data) / 127.5) ** 2
+            olmo_data = normalize_data(olmo_data, self.norm_values['OLMO'], 'mean_std', None, False)
+            olmo_data = np.where(olmo_q == OLMO_NODATA, 0, olmo_data).astype(np.float32) # nodata masked on the raw value -> the mean
+            data.extend([olmo_data])
 
         # Concatenate the data together
         data = torch.from_numpy(np.concatenate(data, axis = -1).swapaxes(-1, 0)).to(torch.float)

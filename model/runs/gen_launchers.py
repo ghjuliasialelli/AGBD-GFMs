@@ -115,6 +115,7 @@ DEFAULTS = {
     'slope': '"true"',
     'step_size': '30',
     'tessera': '"false"',
+    'olmo': '"false"',
     'test_mask': '"false"',
     'tmpdir': '"true"',
     'topo': '"true"',
@@ -588,6 +589,12 @@ SPECS = {
     },
 }
 
+# OlmoEarth launchers mirror the TESSERA ones exactly, with the embedding source swapped.
+for _src, _dst in [('model/runs/lp-mlp/lp_tessera_lite.sh', 'model/runs/lp-mlp/lp_olmo_lite.sh'),
+                   ('model/runs/lp-mlp/mlp_tessera_lite.sh', 'model/runs/lp-mlp/mlp_olmo_lite.sh'),
+                   ('model/runs/nico/tessera_lite.sh', 'model/runs/nico/olmo_lite.sh')] :
+    SPECS[_dst] = {'knobs': {**SPECS[_src]['knobs'], 'tessera': '"false"', 'olmo': '"true"'}, 'sbatch': dict(SPECS[_src]['sbatch'])}
+
 TEMPLATE = r'''#!/bin/bash
 #SBATCH --nodes={sbatch_nodes}
 #SBATCH --cpus-per-task={sbatch_cpus_per_task}
@@ -620,6 +627,9 @@ aef={aef}
 
 # Whether to use TESSERA embeddings (Lite only)
 tessera={tessera}
+
+# Whether to use OlmoEarth v1.3 embeddings (Lite only)
+olmo={olmo}
 
 # Subset of AEF embedding bands ("all" = the full 64). Drives --in_features only.
 aef_bands={aef_bands}
@@ -683,6 +693,9 @@ if [ "$AGBD_ENV" == "cluster" ]; then
         fi
         if [ "$tessera" == "true" ]; then
             rclone copy ${{AGBD_CLUSTER_TESSERA_H5}}/ ${{TMPDIR}} --include "TESSERA-Lite-*.h5" --include "*statistics*.pkl" --transfers 16 --checkers 32
+        fi
+        if [ "$olmo" == "true" ]; then
+            rclone copy ${{AGBD_CLUSTER_OLMO_H5}}/ ${{TMPDIR}} --include "OLMO-Lite-*.h5" --include "OLMO_statistics*.pkl" --transfers 16 --checkers 32
         fi
 
         # Other files
@@ -1093,6 +1106,12 @@ then
     in_features=$((in_features+128)) # + 128 because 128dim TESSERA embeddings
 fi
 
+# olmoearth embeddings
+if [ "$olmo" == "true" ]
+then
+    in_features=$((in_features+128)) # + 128 because 128dim OlmoEarth embeddings
+fi
+
 # Output path and model name #####################################################################################
 
 if [ "$AGBD_ENV" == "cluster" ]
@@ -1211,6 +1230,7 @@ torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=$NNODES --npro
                     --lite_chunk_size $lite_chunk_size \
                     --aef $aef \
                     --tessera $tessera \
+                    --olmo $olmo \
                     --hold_out_region $hold_out_region \
                     --predict $predict \
                     --ensemble $ensemble \

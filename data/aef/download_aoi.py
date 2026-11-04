@@ -55,9 +55,11 @@ def _latlon_to_zone_path(lat, lon) :
     """
     zone_num = int((lon + 180) / 6) + 1
 
-    # Special zones for Norway (32V) and Svalbard (31X, 33X, 35X, 37X)
-    if 56 <= lat < 64 and 3 <= lon < 12 : zone_num = 32
-    elif 72 <= lat < 84 :
+    # No Norway (32V) exception: AEF stores lon 3-6, lat 56-64 under the standard zone 31N. With the
+    # exception, AOIs there resolved to the zone-32 datasets, whose crops are 100% nodata (verified
+    # 2026-10-22 on the AGBD-Val disturbance AOIs at 5.5E, 59.6/61.3N, all four years).
+    # Svalbard (31X, 33X, 35X, 37X) is untested against the bucket and may be wrong in the same way.
+    if 72 <= lat < 84 :
         if   0 <= lon <  9 : zone_num = 31
         elif 9 <= lon < 21 : zone_num = 33
         elif 21 <= lon < 33 : zone_num = 35

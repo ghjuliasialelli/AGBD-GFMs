@@ -31,6 +31,9 @@ aef="true"
 # Whether to use TESSERA embeddings (Lite only)
 tessera="false"
 
+# Whether to use OlmoEarth v1.3 embeddings (Lite only)
+olmo="false"
+
 # Subset of AEF embedding bands ("all" = the full 64). Drives --in_features only.
 aef_bands=("all")
 drop_overlaps="false" # drop AGBD test patches that overlap with the AEF train set
@@ -93,6 +96,9 @@ if [ "$AGBD_ENV" == "cluster" ]; then
         fi
         if [ "$tessera" == "true" ]; then
             rclone copy ${AGBD_CLUSTER_TESSERA_H5}/ ${TMPDIR} --include "TESSERA-Lite-*.h5" --include "*statistics*.pkl" --transfers 16 --checkers 32
+        fi
+        if [ "$olmo" == "true" ]; then
+            rclone copy ${AGBD_CLUSTER_OLMO_H5}/ ${TMPDIR} --include "OLMO-Lite-*.h5" --include "OLMO_statistics*.pkl" --transfers 16 --checkers 32
         fi
 
         # Other files
@@ -503,6 +509,12 @@ then
     in_features=$((in_features+128)) # + 128 because 128dim TESSERA embeddings
 fi
 
+# olmoearth embeddings
+if [ "$olmo" == "true" ]
+then
+    in_features=$((in_features+128)) # + 128 because 128dim OlmoEarth embeddings
+fi
+
 # Output path and model name #####################################################################################
 
 if [ "$AGBD_ENV" == "cluster" ]
@@ -621,6 +633,7 @@ torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=$NNODES --npro
                     --lite_chunk_size $lite_chunk_size \
                     --aef $aef \
                     --tessera $tessera \
+                    --olmo $olmo \
                     --hold_out_region $hold_out_region \
                     --predict $predict \
                     --ensemble $ensemble \

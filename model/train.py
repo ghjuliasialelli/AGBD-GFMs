@@ -87,7 +87,7 @@ def main():
 
     # Running on the cluster: everything has been staged into one directory ($TMPDIR).
     else:
-        dataset_path = {k:args.dataset_path for k in ['h5', 'norm', 'map', 'embeddings', 'aef_h5', 'aef_norm', 'tessera_h5', 'tessera_norm']}
+        dataset_path = {k:args.dataset_path for k in ['h5', 'norm', 'map', 'embeddings', 'aef_h5', 'aef_norm', 'tessera_h5', 'tessera_norm', 'olmo_h5', 'olmo_norm']}
         debug = False
     
     print('DEBUG :', debug)

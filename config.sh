@@ -99,6 +99,9 @@ AGBD_CLUSTER_AEF_NORM="${AGBD_CLUSTER_AEF_NORM:-${AGBD_CLUSTER_WORK}/Data/patche
 AGBD_CLUSTER_TESSERA_H5="${AGBD_CLUSTER_TESSERA_H5:-${AGBD_CLUSTER_WORK}/Data/patches/TESSERA}"
 AGBD_CLUSTER_TESSERA_NORM="${AGBD_CLUSTER_TESSERA_NORM:-${AGBD_CLUSTER_WORK}/Data/patches/TESSERA}"
 
+AGBD_CLUSTER_OLMO_H5="${AGBD_CLUSTER_OLMO_H5:-${AGBD_CLUSTER_WORK}/Data/patches/OLMO}"
+AGBD_CLUSTER_OLMO_NORM="${AGBD_CLUSTER_OLMO_NORM:-${AGBD_CLUSTER_WORK}/Data/patches/OLMO}"
+
 AGBD_CLUSTER_SPLITS="${AGBD_CLUSTER_SPLITS:-${AGBD_CLUSTER_WORK}/BiomassDatasetCreation/Data/download_Sentinel/biomes_split}"
 
 # Raw per-tile rasters -- only inference_agbd.py (AGBD-features tile inference) reads these.
@@ -140,6 +143,8 @@ case "$AGBD_PROFILE" in
         AGBD_LOCAL_AEF_NORM="${AGBD_LOCAL_AEF_NORM:-${AGBD_LOCAL_ROOT}/patches/AEF}"
         AGBD_LOCAL_TESSERA_H5="${AGBD_LOCAL_TESSERA_H5:-${AGBD_LOCAL_ROOT}/patches/TESSERA}"
         AGBD_LOCAL_TESSERA_NORM="${AGBD_LOCAL_TESSERA_NORM:-${AGBD_LOCAL_ROOT}/patches/TESSERA}"
+        AGBD_LOCAL_OLMO_H5="${AGBD_LOCAL_OLMO_H5:-${AGBD_LOCAL_ROOT}/patches/OLMO}"
+        AGBD_LOCAL_OLMO_NORM="${AGBD_LOCAL_OLMO_NORM:-${AGBD_LOCAL_ROOT}/patches/OLMO}"
         AGBD_LOCAL_SPLITS="${AGBD_LOCAL_SPLITS:-${AGBD_LOCAL_ROOT}/BiomassDatasetCreation/Data/download_Sentinel/biomes_split}"
         AGBD_LOCAL_PLOTS="${AGBD_LOCAL_PLOTS:-${AGBD_LOCAL_ROOT}/EcosystemAnalysis/Models/Biomes/eval_plots}"
         # Raw per-tile rasters -- only inference_agbd.py (AGBD-features tile inference) reads these.
@@ -166,6 +171,8 @@ case "$AGBD_PROFILE" in
         AGBD_LOCAL_AEF_NORM="${AGBD_LOCAL_AEF_NORM:-${AGBD_LOCAL_ROOT}/patches/AEF}"
         AGBD_LOCAL_TESSERA_H5="${AGBD_LOCAL_TESSERA_H5:-${AGBD_LOCAL_ROOT}/patches/TESSERA}"
         AGBD_LOCAL_TESSERA_NORM="${AGBD_LOCAL_TESSERA_NORM:-${AGBD_LOCAL_ROOT}/patches/TESSERA}"
+        AGBD_LOCAL_OLMO_H5="${AGBD_LOCAL_OLMO_H5:-${AGBD_LOCAL_ROOT}/patches/OLMO}"
+        AGBD_LOCAL_OLMO_NORM="${AGBD_LOCAL_OLMO_NORM:-${AGBD_LOCAL_ROOT}/patches/OLMO}"
         AGBD_LOCAL_SPLITS="${AGBD_LOCAL_SPLITS:-${AGBD_LOCAL_ROOT}/patches}"
         AGBD_LOCAL_PLOTS="${AGBD_LOCAL_PLOTS:-${AGBD_LOCAL_ROOT}/eval_plots}"
         ;;
@@ -186,6 +193,8 @@ case "$AGBD_PROFILE" in
         AGBD_LOCAL_AEF_NORM="${AGBD_LOCAL_AEF_NORM:-${AGBD_LOCAL_ROOT}/patches/AEF}"
         AGBD_LOCAL_TESSERA_H5="${AGBD_LOCAL_TESSERA_H5:-${AGBD_LOCAL_ROOT}/patches/TESSERA}"
         AGBD_LOCAL_TESSERA_NORM="${AGBD_LOCAL_TESSERA_NORM:-${AGBD_LOCAL_ROOT}/patches/TESSERA}"
+        AGBD_LOCAL_OLMO_H5="${AGBD_LOCAL_OLMO_H5:-${AGBD_LOCAL_ROOT}/patches/OLMO}"
+        AGBD_LOCAL_OLMO_NORM="${AGBD_LOCAL_OLMO_NORM:-${AGBD_LOCAL_ROOT}/patches/OLMO}"
         # data/patches is THE dataset directory: it mirrors what the cluster launchers
         # stage into $TMPDIR (patches + statistics + biomes_splits_to_name.pkl +
         # tiles_per_region.pkl + AEF_overlaps.pkl). inference_aef.py reads the splits

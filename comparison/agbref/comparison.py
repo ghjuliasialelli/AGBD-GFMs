@@ -48,6 +48,13 @@ _BUFFER_M = 5000  # legacy 10km-square half-side; kept only for make_utm_square 
 COVERAGE = True     # Set to False to skip the common-grid pass (roughly halves the runtime)
 GRID_RES_M = 10     # Resolution of the canonical comparison grid, in metres
 
+# The full-cell mean (<src>_mean) and the common-grid mean (<src>_mean_common) are computed by two
+# independent code paths over (almost) the same pixels, so per plot they must agree: in the July 2026
+# cache the largest gap was 2.6 Mg/ha. The run stops if any plot disagrees by more than this, which is
+# how a masking bug that inflated CCI to thousands of Mg/ha is now caught instead of being plotted.
+# Only checked when COVERAGE is on and both paths ran; set to None to disable.
+MAX_PATH_DISAGREEMENT = 10.0  # Mg/ha
+
 # Minimum fraction of the plot that must be covered for a plot to be kept. Plots below this are
 # dropped, because their mean is taken over a sub-area and is not an estimate of the plot mean.
 # Set to None to disable the filter and only report coverage.
@@ -99,13 +106,21 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 # === Paths ===
 BASE_DIR = Path(__file__).parent
 AGBREF_PATH = BASE_DIR / "data" / "AGBRef.geojson"
-NICO_DIR = Path("/scratch3/gsialelli/EcosystemAnalysis/Models/Biomes/predictions/nico_film/59620113-1_59620113-1_59620113-1")
+# Which model's predictions to compare: the paper's AEF model by default. To evaluate another model
+# over exactly the same cells and filters, set AGBREF_PRED_RUN to its prediction folder name, e.g.
+#   AGBREF_PRED_RUN=17183109-1_17183109-1_17183109-1 python comparison.py
+# A non-default run gets its own cache and its run id prefixed to every output, so it never
+# overwrites the default model's files.
+_DEFAULT_PRED_RUN = "59620113-1_59620113-1_59620113-1"
+PRED_RUN = os.environ.get("AGBREF_PRED_RUN", _DEFAULT_PRED_RUN)
+_RUN_TAG = None if PRED_RUN == _DEFAULT_PRED_RUN else PRED_RUN.split("_")[0]
+NICO_DIR = Path("/scratch3/gsialelli/EcosystemAnalysis/Models/Biomes/predictions/nico_film") / PRED_RUN
 CCI_DIR = Path("/scratch3/gsialelli/CCI")
-CACHE_PATH = BASE_DIR / "results" / "comparison_results.npz"
+CACHE_PATH = BASE_DIR / "results" / ("comparison_results.npz" if _RUN_TAG is None else f"comparison_results_{_RUN_TAG}.npz")
 
 # === Output naming (auto-built from active flags) ===
 def _build_suffix():
-    parts = []
+    parts = [] if _RUN_TAG is None else [_RUN_TAG]
     if DROP_TRAIN_TILES:
         parts.append("notrain")
     if AGBD_REGIONS:
@@ -180,18 +195,25 @@ def make_cell(lon, lat, half_deg=HALF_DEG):
 # Helper: reproject a raster to a target CRS (in memory)
 # =========================================================================
 def _reproject_raster_to_crs(src, target_crs):
-    """Reproject an open rasterio dataset to target_crs. Returns (data, transform, crs, nodata)."""
+    """Reproject an open rasterio dataset to target_crs. Returns (data, transform, crs, width, height).
+
+    The output is float32 with NaN wherever the source has no data (its declared nodata, or outside
+    its footprint). It used to be np.empty in the source dtype, which left the unreached pixels as
+    uninitialised memory -- a silent dependency on whatever the allocator and rasterio version did.
+    """
     transform, width, height = calculate_default_transform(
         src.crs, target_crs, src.width, src.height, *src.bounds
     )
-    dst_data = np.empty((src.count, height, width), dtype=src.dtypes[0])
+    dst_data = np.full((src.count, height, width), np.nan, dtype=np.float32)
     reproject(
-        source=src.read(),
+        source=src.read().astype(np.float32),
         destination=dst_data,
         src_transform=src.transform,
         src_crs=src.crs,
+        src_nodata=src.nodata,
         dst_transform=transform,
         dst_crs=target_crs,
+        dst_nodata=np.nan,
         resampling=Resampling.nearest,
     )
     return dst_data, transform, target_crs, width, height
@@ -322,10 +344,16 @@ def extract_raster_stats(raster_path, geom_4326, nodata, utm_epsg):
         # Reproject geometry to the local UTM CRS
         geom_utm = gpd.GeoSeries([geom_4326], crs="EPSG:4326").to_crs(epsg=utm_epsg).iloc[0]
 
+        # filled=False everywhere below: the result is a masked array whose mask is "declared nodata
+        # OR outside the polygon". With the default filled=True, pixels outside the polygon come
+        # back set to a fill value, and for a source read with nodata=None (CCI, whose 0 is a real
+        # 0 Mg/ha) that fill was then averaged in as biomass. Under rasterio 1.4.4 the fill is the
+        # file's 65535, which turned the CCI plot means into thousands of Mg/ha; under the env the
+        # July cache was built in it was not. Taking validity from the mask removes the dependency.
         if CRS(src.crs) == target_crs:
             # Raster already in the right CRS — mask directly
             try:
-                out_image, _ = rio_mask(src, [mapping(geom_utm)], crop=True, all_touched=True)
+                out_image, _ = rio_mask(src, [mapping(geom_utm)], crop=True, all_touched=True, filled=False)
             except ValueError:
                 return np.nan, np.nan, np.nan
         else:
@@ -333,21 +361,21 @@ def extract_raster_stats(raster_path, geom_4326, nodata, utm_epsg):
             dst_data, dst_transform, dst_crs, dst_w, dst_h = _reproject_raster_to_crs(src, target_crs)
             # Write to a temporary in-memory raster for masking
             profile = src.profile.copy()
-            profile.update(crs=dst_crs, transform=dst_transform, width=dst_w, height=dst_h)
+            profile.update(crs=dst_crs, transform=dst_transform, width=dst_w, height=dst_h, dtype="float32", nodata=np.nan)
             tmp = tempfile.NamedTemporaryFile(suffix=".tif", delete=False)
             tmp.close()
             with rasterio.open(tmp.name, "w", **profile) as dst:
                 dst.write(dst_data)
             try:
                 with rasterio.open(tmp.name) as dst:
-                    out_image, _ = rio_mask(dst, [mapping(geom_utm)], crop=True, all_touched=True)
+                    out_image, _ = rio_mask(dst, [mapping(geom_utm)], crop=True, all_touched=True, filled=False)
             except ValueError:
                 Path(tmp.name).unlink(missing_ok=True)
                 return np.nan, np.nan, np.nan
             finally:
                 Path(tmp.name).unlink(missing_ok=True)
 
-    data = out_image[0].astype(np.float32)
+    data = np.ma.filled(out_image[0].astype(np.float32), np.nan)
     if nodata is not None:
         data = np.where(data == nodata, np.nan, data)
 
@@ -587,6 +615,23 @@ if results is None:
     CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     np.savez(CACHE_PATH, _geom_version=np.array(_GEOM_VERSION), **results)
     print(f"Results cached to {CACHE_PATH}")
+
+# === Cross-check the two extraction paths ===
+# Runs on cached results too, so a cache written by a buggy run is refused rather than reused.
+if COVERAGE and MAX_PATH_DISAGREEMENT is not None:
+    for src_name in ["nico", "cci"]:
+        full, common = results[f"{src_name}_mean"], results[f"{src_name}_mean_common"]
+        both = np.isfinite(full) & np.isfinite(common)
+        gap = np.abs(full - common)
+        bad = np.flatnonzero(both & (gap > MAX_PATH_DISAGREEMENT))
+        print(f"  {src_name}: full-cell vs common-grid mean, max |diff| = {np.nanmax(gap[both]):.2f} Mg/ha over {both.sum()} plots")
+        if len(bad):
+            worst = bad[np.argsort(-gap[bad])][:5]
+            raise RuntimeError(
+                f"{src_name}_mean and {src_name}_mean_common disagree by > {MAX_PATH_DISAGREEMENT} Mg/ha on {len(bad)} plots "
+                f"(worst: {[(int(i), round(float(full[i]), 1), round(float(common[i]), 1)) for i in worst]}). "
+                f"One extraction path is broken; if the cache is stale, delete {CACHE_PATH} and rerun."
+            )
 
 # === Apply filters ===
 print("\nApplying filters...")

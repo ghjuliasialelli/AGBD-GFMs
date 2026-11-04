@@ -84,13 +84,13 @@ def get_paths(local) :
 
     Returns:
     - dict: keys 'h5', 'norm', 'map', 'ckpt', 'embeddings', 'aef', 'aef_h5', 'aef_norm',
-            'tessera_h5', 'tessera_norm', 'splits', plus 'tiles', 'alos', 'dem', 'lc' and
+            'tessera_h5', 'tessera_norm', 'olmo_h5', 'olmo_norm', 'splits', plus 'tiles', 'alos', 'dem', 'lc' and
             'region' when they are defined (raw per-tile rasters; only inference_agbd.py
             needs them, so they are optional and simply absent otherwise).
     """
     prefix = 'AGBD_LOCAL_' if local else 'AGBD_CLUSTER_'
     keys = ['H5', 'NORM', 'MAP', 'CKPT', 'EMBEDDINGS', 'AEF', 'AEF_H5', 'AEF_NORM',
-            'TESSERA_H5', 'TESSERA_NORM', 'SPLITS']
+            'TESSERA_H5', 'TESSERA_NORM', 'OLMO_H5', 'OLMO_NORM', 'SPLITS']
     paths = {}
     for k in keys :
         value = CFG.get(prefix + k)
