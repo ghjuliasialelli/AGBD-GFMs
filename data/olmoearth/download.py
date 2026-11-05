@@ -41,6 +41,13 @@ Usage:
 
     then validate with audit.py h5 before computing statistics.
 
+    Full AGBD (one file per split and year, e.g. to evaluate Lite-trained models on the full test set):
+    python download.py  --full --input <dir with data_subset-{year}-v4_{i}-20.h5> --split test --year 2019
+                        --output <path to OLMO-test-2019.h5> --cache-dir ... [--plan]
+    Samples are stored flat in the order of audit.full_layout() (files 0..19, tiles sorted, rows in
+    order); /tiles/{name,file,start,count} maps (tile, row in the AGBD tile) -> start + row.
+    --plan prints the sample / chunk counts and exits without downloading.
+
     with the tessera conda environment (zarr 3, fsspec + aiohttp, h5py, pyproj, pandas/pyarrow)
 
 """
@@ -65,8 +72,8 @@ import zarr
 from pyproj import Transformer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from audit import (STORE_URL, lonlat_from_gedi, provenance_coverage, split_from_name,  # noqa: E402
-                   zone_for_lon)
+from audit import (GEDI_KEYS, STORE_URL, full_gedi, full_layout, layout_from_h5,  # noqa: E402
+                   lonlat_from_gedi, provenance_coverage, split_from_name, zone_for_lon)
 
 PATCH = 25
 HALF = PATCH // 2
@@ -247,8 +254,13 @@ def store_fingerprint(root: zarr.Group) -> dict:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--input", required=True, help="AGBD-Lite-{split}.h5")
-    ap.add_argument("--output", required=True, help="OLMO-Lite-{split}.h5")
+    ap.add_argument("--input", required=True, help="AGBD-Lite-{split}.h5, or with --full the data_subset directory")
+    ap.add_argument("--output", required=True, help="OLMO-Lite-{split}.h5, or with --full OLMO-{split}-{year}.h5")
+    ap.add_argument("--full", action="store_true", help="Build from the full AGBD data_subset files (needs --split).")
+    ap.add_argument("--split", choices=("train", "val", "test"), default=None, help="Split to build with --full.")
+    ap.add_argument("--mapping", default=None,
+                    help="Tile -> split pickle for --full (default <input>/biomes_splits_to_name.pkl).")
+    ap.add_argument("--plan", action="store_true", help="Print sample and chunk counts, then exit (no download).")
     ap.add_argument("--cache-dir", required=True, help="Directory for the provenance parquet files.")
     ap.add_argument("--year", type=int, default=YEAR)
     ap.add_argument("--min-coverage", type=float, default=1.0,
@@ -267,10 +279,18 @@ def main() -> None:
     args = ap.parse_args()
 
     input_path, output_path = Path(args.input), Path(args.output)
-    if not input_path.is_file(): raise SystemExit(f"input file not found: {input_path}")
-    in_split, out_split = split_from_name(input_path.name), split_from_name(output_path.name)
-    if in_split is None or out_split is None or in_split != out_split:
-        raise SystemExit(f"split mismatch or not inferable: input {input_path.name} vs output {output_path.name}")
+    if args.full:
+        if args.split is None: raise SystemExit("--full needs --split")
+        if not input_path.is_dir(): raise SystemExit(f"--full: input must be the data_subset directory, got {input_path}")
+        if output_path.name != f"OLMO-{args.split}-{args.year}.h5":
+            raise SystemExit(f"--full: output must be named OLMO-{args.split}-{args.year}.h5, got {output_path.name}")
+        mapping = Path(args.mapping) if args.mapping else input_path / "biomes_splits_to_name.pkl"
+        if not mapping.is_file(): raise SystemExit(f"split mapping not found: {mapping}")
+    else:
+        if not input_path.is_file(): raise SystemExit(f"input file not found: {input_path}")
+        in_split, out_split = split_from_name(input_path.name), split_from_name(output_path.name)
+        if in_split is None or out_split is None or in_split != out_split:
+            raise SystemExit(f"split mismatch or not inferable: input {input_path.name} vs output {output_path.name}")
     if output_path.exists() and not args.continue_run:
         raise SystemExit(f"output already exists: {output_path}\n  use --continue to resume, or move it away to start fresh.")
     if args.continue_run and not output_path.exists(): raise SystemExit(f"--continue but no output at {output_path}")
@@ -279,13 +299,20 @@ def main() -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     # -------------------- samples --------------------
-    with h5py.File(input_path, "r") as src:
-        n_total = src["GEDI/lat_decimal"].shape[0]
-        if args.debug:
-            if args.seed is not None: keep = np.sort(np.random.default_rng(args.seed).choice(n_total, size=args.debug, replace=False))
-            else: keep = np.arange(0, n_total, max(1, n_total // args.debug))[: args.debug]
-        else: keep = np.arange(n_total)
-        gedi = {k: src[f"GEDI/{k}"][:][keep] for k in ("lat_decimal", "lat_offset", "lon_decimal", "lon_offset")}
+    if args.full:
+        layout = full_layout(input_path, args.year, args.split, mapping)
+        src_gedi = full_gedi(input_path, layout)
+        print(f"full AGBD {args.split} {args.year}: {len(layout)} tiles", flush=True)
+    else:
+        layout = None
+        with h5py.File(input_path, "r") as src: src_gedi = {k: src[f"GEDI/{k}"][:] for k in GEDI_KEYS}
+    n_total = len(src_gedi["lat_decimal"])
+    if args.debug:
+        if args.seed is not None: keep = np.sort(np.random.default_rng(args.seed).choice(n_total, size=args.debug, replace=False))
+        else: keep = np.arange(0, n_total, max(1, n_total // args.debug))[: args.debug]
+    else: keep = np.arange(n_total)
+    gedi = {k: v[keep] for k, v in src_gedi.items()}
+    del src_gedi
     lon, lat = lonlat_from_gedi(gedi["lat_decimal"], gedi["lat_offset"], gedi["lon_decimal"], gedi["lon_offset"])
     n = len(lon)
     assert n > 0, "no samples selected"
@@ -312,6 +339,13 @@ def main() -> None:
         assert (row[m] >= HALF).all() and (row[m] < Z.H - HALF).all() and (col[m] >= HALF).all() and (col[m] < Z.W - HALF).all(), \
             f"utm{z:02d}: a patch falls off the array"
 
+    if args.plan:
+        refs = {c for k in range(n) for c in chunks_for(int(row[k]), int(col[k]), int(zone[k]))}
+        centres = {(int(zone[k]), int(row[k]) // CHUNK, int(col[k]) // CHUNK) for k in range(n)}
+        print(f"plan: {n:,} samples, {len(centres):,} centre chunks, {len(refs):,} unique chunks "
+              f"(~{len(refs) * 3 / 1024:.0f} GB on the wire), output ~{n * PATCH * PATCH * BANDS / 1e9:.0f} GB")
+        return
+
     # -------------------- output --------------------
     if args.continue_run:
         dst = h5py.File(output_path, "r+")
@@ -322,6 +356,8 @@ def main() -> None:
         if dst.attrs["build_version"] != fp["build_version"]:
             raise SystemExit(f"store build changed since this file was started:\n  file : {dst.attrs['build_version']}\n"
                              f"  store: {fp['build_version']}\nRefusing to mix builds; start a fresh file.")
+        if (layout is not None) != ("tiles" in dst) or (layout is not None and layout_from_h5(dst) != layout):
+            raise SystemExit("the /tiles table differs from the current layout of the AGBD files -- refusing to continue")
         if not (np.array_equal(dst["row"][:], row) and np.array_equal(dst["col"][:], col) and np.array_equal(dst["zone"][:], zone)):
             raise SystemExit("recomputed centre pixels differ from the stored ones -- refusing to continue")
         todo = np.flatnonzero(~dst["done"][:])
@@ -337,12 +373,21 @@ def main() -> None:
         g = dst.create_group("GEDI")
         for k, v in gedi.items(): g.create_dataset(k, data=v)
         if args.debug: dst.create_dataset("source_index", data=keep)
+        if layout is not None:
+            t = dst.create_group("tiles")
+            t.create_dataset("name", data=np.array([x["tile"] for x in layout], dtype="S"))
+            t.create_dataset("file", data=np.array([x["file"] for x in layout], dtype="S"))
+            t.create_dataset("start", data=np.array([x["start"] for x in layout], dtype=np.int64))
+            t.create_dataset("count", data=np.array([x["count"] for x in layout], dtype=np.int64))
+            dst.attrs.update({"split": args.split, "mapping": str(mapping.resolve()),
+                              "source": "full AGBD data_subset files; row of (tile, i) = tiles/start[tile] + i"})
         dst.attrs.update({"year": args.year, "nodata": NODATA, "layout": "N,H,W,C (C = 128 OlmoEarth dims)",
                           "dequantize": "sign(q) * (|q| / 127.5) ** 2, NaN where q == -128",
                           "centre_pixel": "pixel containing the GEDI shot (floor), patch rows/cols centre +- 12",
                           "provenance_windows_etag": cov["etag"], "provenance_coverage": cov["frac"],
-                          "input": str(input_path.resolve()), "input_size": input_path.stat().st_size,
-                          "input_mtime": input_path.stat().st_mtime,
+                          "input": str(input_path.resolve()),
+                          **({} if args.full else {"input_size": input_path.stat().st_size,
+                                                   "input_mtime": input_path.stat().st_mtime}),
                           "created_utc": datetime.now(timezone.utc).isoformat(),
                           "licence": "OlmoEarth Artifact License (https://data.source.coop/olmoearth/olmoearth-v1-3-embeddings/LICENSE.txt)",
                           **fp})

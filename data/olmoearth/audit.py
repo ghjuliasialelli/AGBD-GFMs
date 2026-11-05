@@ -18,6 +18,9 @@ Audits for OLMO-Lite. Every subcommand exits non-zero on failure, so they can ga
                  shifted by 1-2 px. The stored orientation must score best: this catches a
                  south-up read, a transposed patch and an off-by-one centre pixel.
                    python audit.py h5 --olmo OLMO-Lite-test.h5 --agbd AGBD-Lite-test.h5
+               For a full-AGBD build (download.py --full), --agbd is the data_subset directory and
+               the /tiles table is also checked against a fresh layout of the source files:
+                   python audit.py h5 --olmo OLMO-test-2019.h5 --agbd /path/to/patches
 
 env: tessera
 
@@ -65,6 +68,48 @@ def split_from_name(name: str) -> str | None:
     for split in ("train", "val", "test"):
         if f"-{split}." in name or name.endswith(f"-{split}.h5"): return split
     return None
+
+
+FULL_FNAME = "data_subset-{year}-v{version}_{i}-20.h5"  # the full AGBD, as model/dataset.py reads it
+GEDI_KEYS = ("lat_decimal", "lat_offset", "lon_decimal", "lon_offset")
+
+
+def full_layout(agbd_dir: Path, year: int, split: str, mapping: Path, version: int = 4) -> list[dict]:
+    """Flat order of the full-AGBD samples of `split` for `year`: files i = 0..19, tiles sorted within
+    a file, rows 0..n-1 within a tile. Tile membership comes from biomes_splits_to_name.pkl, exactly
+    as initialize_index() in model/dataset.py. Returns [{file, tile, start, count}]."""
+    import pickle
+    import h5py
+    with open(mapping, "rb") as fh: split_tiles = set(pickle.load(fh)[split])
+    layout, start, seen = [], 0, set()
+    for i in range(20):
+        fname = FULL_FNAME.format(year=year, version=version, i=i)
+        with h5py.File(Path(agbd_dir) / fname, "r") as f:
+            for tile in sorted(set(f.keys()) & split_tiles):
+                assert tile not in seen, f"tile {tile} appears in more than one {year} file"
+                seen.add(tile)
+                count = int(f[tile]["GEDI"]["lat_decimal"].shape[0])
+                layout.append({"file": fname, "tile": tile, "start": start, "count": count})
+                start += count
+    assert start > 0, f"no {split} samples for {year} in {agbd_dir}"
+    return layout
+
+
+def full_gedi(agbd_dir: Path, layout: list[dict]) -> dict[str, np.ndarray]:
+    """The GEDI coordinate arrays of a full_layout(), concatenated in its flat order."""
+    import h5py
+    out = {k: [] for k in GEDI_KEYS}
+    for t in layout:
+        with h5py.File(Path(agbd_dir) / t["file"], "r") as f:
+            for k in GEDI_KEYS: out[k].append(f[t["tile"]]["GEDI"][k][:])
+    return {k: np.concatenate(v) for k, v in out.items()}
+
+
+def layout_from_h5(fo) -> list[dict]:
+    """Read back the /tiles table that download.py --full writes."""
+    t = fo["tiles"]
+    return [{"file": f.decode(), "tile": n.decode(), "start": int(s), "count": int(c)}
+            for f, n, s, c in zip(t["file"][:], t["name"][:], t["start"][:], t["count"][:])]
 
 
 def _zone_transforms() -> dict[int, list]:
@@ -183,13 +228,32 @@ def alignment_check(emb: np.ndarray, s2: np.ndarray, rng: np.random.Generator) -
 def cmd_h5(args) -> int:
     import h5py
     fails = []
-    with h5py.File(args.olmo, "r") as fo, h5py.File(args.agbd, "r") as fa:
+    with h5py.File(args.olmo, "r") as fo:
         n = fo["embeddings"].shape[0]
-        src_idx = fo["source_index"][:] if "source_index" in fo else np.arange(fa["GEDI/lat_decimal"].shape[0])
-        print(f"{args.olmo}: n={n:,} year={fo.attrs.get('year')} build={fo.attrs.get('build_version')}")
+        full = "tiles" in fo  # built by download.py --full from the data_subset files
+        print(f"{args.olmo}: n={n:,} year={fo.attrs.get('year')} build={fo.attrs.get('build_version')}"
+              f"{'  (full AGBD, ' + fo.attrs['split'] + ')' if full else ''}")
+        if full:
+            if not Path(args.agbd).is_dir(): raise SystemExit("--agbd must be the directory of the data_subset files for a full-AGBD build")
+            layout = layout_from_h5(fo)
+            redo = full_layout(Path(args.agbd), int(fo.attrs["year"]), fo.attrs["split"], Path(fo.attrs["mapping"]))
+            if layout != redo: fails.append("/tiles table differs from the layout recomputed from the AGBD files")
+            src_gedi = full_gedi(Path(args.agbd), redo)
+            n_src = sum(t["count"] for t in redo)
+            starts = np.array([t["start"] for t in redo])
+
+            def s2_patch(k: int) -> np.ndarray:
+                t = redo[int(np.searchsorted(starts, k, side="right")) - 1]
+                with h5py.File(Path(args.agbd) / t["file"], "r") as f: return f[t["tile"]]["S2_bands"][k - t["start"]]
+        else:
+            fa = h5py.File(args.agbd, "r")
+            src_gedi = {k: fa[f"GEDI/{k}"][:] for k in GEDI_KEYS}
+            n_src = len(src_gedi["lat_decimal"])
+            s2_patch = lambda k: fa["S2_bands"][k]  # noqa: E731
+        src_idx = fo["source_index"][:] if "source_index" in fo else np.arange(n_src)
         if len(src_idx) != n: fails.append(f"N mismatch: olmo {n} vs source selection {len(src_idx)}")
-        for k in ("lat_decimal", "lat_offset", "lon_decimal", "lon_offset"):
-            if not np.array_equal(fo[f"GEDI/{k}"][:], fa[f"GEDI/{k}"][:][src_idx]): fails.append(f"GEDI/{k} differs from source")
+        for k in GEDI_KEYS:
+            if not np.array_equal(fo[f"GEDI/{k}"][:], src_gedi[k][src_idx]): fails.append(f"GEDI/{k} differs from source")
         if int(fo.attrs["year"]) != args.year: fails.append(f"year attr {fo.attrs['year']} != {args.year}")
         done = fo["done"][:]
         if not done.all(): fails.append(f"{(~done).sum():,} samples not done (resume with download.py --continue)")
@@ -218,7 +282,8 @@ def cmd_h5(args) -> int:
         pick = np.sort(rng.choice(cand, size=min(args.n_align, len(cand)), replace=False))
         assert len(pick) >= 50, f"only {len(pick)} clean samples for the alignment check"
         emb = np.stack([fo["embeddings"][i] for i in pick])
-        s2 = np.stack([fa["S2_bands"][int(src_idx[i])] for i in pick])
+        s2 = np.stack([s2_patch(int(src_idx[i])) for i in pick])
+    if not full: fa.close()
     scores = alignment_check(emb, s2, rng)
     best = max(scores, key=scores.get)
     print(f"alignment R^2 vs S2 NDVI (n={len(pick)} samples):")
@@ -244,8 +309,9 @@ if __name__ == "__main__":
     c.add_argument("--year", type=int, default=2020)
     c.add_argument("--min-coverage", type=float, default=1.0)
     h = sub.add_parser("h5")
-    h.add_argument("--olmo", required=True, help="OLMO-Lite-{split}.h5")
-    h.add_argument("--agbd", required=True, help="the AGBD-Lite-{split}.h5 it was built from")
+    h.add_argument("--olmo", required=True, help="OLMO-Lite-{split}.h5, or OLMO-{split}-{year}.h5 from download.py --full")
+    h.add_argument("--agbd", required=True, help="the AGBD-Lite-{split}.h5 it was built from, or for a --full build "
+                                                  "the directory holding the data_subset-{year}-v4_{i}-20.h5 files")
     h.add_argument("--year", type=int, default=2020)
     h.add_argument("--max-nodata-frac", type=float, default=1e-3, help="max fraction of nodata pixels over all patches")
     h.add_argument("--max-centre-nodata", type=int, default=0, help="max number of samples whose centre pixel is nodata")

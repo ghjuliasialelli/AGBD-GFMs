@@ -790,18 +790,33 @@ class GEDIDataset(Dataset):
 
         # Prepare for using OlmoEarth embeddings
         if self.olmo :
-            assert self.lite, "OlmoEarth embeddings are currently only supported with the Lite dataset."
-            assert not (self.lite_eval_big and self.mode == 'test'), "OlmoEarth embeddings are not available for the non-Lite test set."
-            olmo_fname = f'OLMO-Lite-{self.mode}.h5'
-            olmo_stats_fname = "OLMO_statistics_2020_global_lite.pkl"
+            assert self.lite, "OlmoEarth embeddings are currently only supported for models trained on the Lite dataset."
+            olmo_stats_fname = "OLMO_statistics_2020_global_lite.pkl" # the train stats, also for the full test set
             print(f'Using file: {olmo_stats_fname} for OlmoEarth normalization values.')
             with open(join(self.olmo_norm_path, olmo_stats_fname), mode = 'rb') as f:
                 olmo_stats = pickle.load(f)
             assert self.olmo_dims in (64, 128), f"olmo_dims must be 64 or 128, got {self.olmo_dims}"
             # Per-dim statistics, so the first olmo_dims entries are exactly the stats of the kept dims
             self.norm_values['OLMO'] = {k: np.asarray(v)[: self.olmo_dims] for k, v in olmo_stats.items()}
-            self.olmo_handle = h5py.File(join(self.olmo_h5_path, olmo_fname), 'r')
-            assert int(self.olmo_handle.attrs['year']) == 2020 and self.olmo_handle['done'][:].all(), f"{olmo_fname} is not a finished 2020 build"
+            if self.lite_and_test : # full AGBD test set: one OLMO-test-{year}.h5 per year, rows = tiles/start[tile] + idx
+                self.olmo_full = {}
+                for year in self.years :
+                    olmo_fname = f'OLMO-test-{year}.h5'
+                    h = h5py.File(join(self.olmo_h5_path, olmo_fname), 'r')
+                    assert int(h.attrs['year']) == year and h.attrs['split'] == 'test' and h['done'][:].all(), f"{olmo_fname} is not a finished {year} test build"
+                    starts = {n.decode(): (int(s), int(c)) for n, s, c in zip(h['tiles']['name'][:], h['tiles']['start'][:], h['tiles']['count'][:])}
+                    self.olmo_full[year] = (h, starts)
+                # every indexed tile must be in the OLMO file with the same number of rows as in AGBD
+                for fname, tiles in self.index.items() :
+                    year = int(fname.split('-')[1])
+                    for tile in tiles :
+                        assert tile in self.olmo_full[year][1], f"tile {tile} ({year}) missing from OLMO-test-{year}.h5"
+                        n_agbd = self.handles[fname][tile]['GEDI']['agbd'].shape[0]
+                        assert self.olmo_full[year][1][tile][1] == n_agbd, f"tile {tile} ({year}): {self.olmo_full[year][1][tile][1]} OLMO rows vs {n_agbd} AGBD rows"
+            else :
+                olmo_fname = f'OLMO-Lite-{self.mode}.h5'
+                self.olmo_handle = h5py.File(join(self.olmo_h5_path, olmo_fname), 'r')
+                assert int(self.olmo_handle.attrs['year']) == 2020 and self.olmo_handle['done'][:].all(), f"{olmo_fname} is not a finished 2020 build"
 
 
     def __len__(self):
@@ -1101,7 +1116,11 @@ class GEDIDataset(Dataset):
 
         # OlmoEarth embeddings: int8 signed-square-root quantised, -128 = nodata (NOT TESSERA's emb * scale)
         if self.olmo :
-            olmo_q = self.olmo_handle['embeddings'][idx, self.center_x - self.window_size : self.center_x + self.window_size + 1, self.center_y - self.window_size : self.center_y + self.window_size + 1, : self.olmo_dims]
+            if self.lite_and_test :
+                olmo_h, olmo_starts = self.olmo_full[int(file_name.split('-')[1])]
+                olmo_ds, olmo_row = olmo_h['embeddings'], olmo_starts[tile_name][0] + idx
+            else : olmo_ds, olmo_row = self.olmo_handle['embeddings'], idx
+            olmo_q = olmo_ds[olmo_row, self.center_x - self.window_size : self.center_x + self.window_size + 1, self.center_y - self.window_size : self.center_y + self.window_size + 1, : self.olmo_dims]
             olmo_data = olmo_q.astype(np.float32)
             olmo_data = np.sign(olmo_data) * (np.abs(olmo_data) / 127.5) ** 2
             olmo_data = normalize_data(olmo_data, self.norm_values['OLMO'], 'mean_std', None, False)
