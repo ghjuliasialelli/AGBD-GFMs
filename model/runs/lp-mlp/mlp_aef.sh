@@ -33,6 +33,8 @@ tessera="false"
 
 # Whether to use OlmoEarth v1.3 embeddings (Lite only)
 olmo="false"
+# Leading OlmoEarth dims to keep: 128 (all) or 64 (the standalone Matryoshka embedding)
+olmo_dims=128
 
 # Subset of AEF embedding bands ("all" = the full 64). Drives --in_features only.
 aef_bands=("all")
@@ -512,7 +514,7 @@ fi
 # olmoearth embeddings
 if [ "$olmo" == "true" ]
 then
-    in_features=$((in_features+128)) # + 128 because 128dim OlmoEarth embeddings
+    in_features=$((in_features+olmo_dims)) # OlmoEarth dims kept (128, or 64 for Matryoshka)
 fi
 
 # Output path and model name #####################################################################################
@@ -634,6 +636,7 @@ torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=$NNODES --npro
                     --aef $aef \
                     --tessera $tessera \
                     --olmo $olmo \
+                    --olmo_dims $olmo_dims \
                     --hold_out_region $hold_out_region \
                     --predict $predict \
                     --ensemble $ensemble \

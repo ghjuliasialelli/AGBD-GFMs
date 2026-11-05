@@ -648,6 +648,7 @@ class GEDIDataset(Dataset):
         self.aef = args.aef
         self.tessera = args.tessera
         self.olmo = getattr(args, 'olmo', False) # absent from the configs of runs that predate it
+        self.olmo_dims = getattr(args, 'olmo_dims', 128) # leading Matryoshka dims to keep (64 or 128)
         self.predict = args.predict
 
         # Whether to mask the Sentinel-2 data for this mode
@@ -795,7 +796,10 @@ class GEDIDataset(Dataset):
             olmo_stats_fname = "OLMO_statistics_2020_global_lite.pkl"
             print(f'Using file: {olmo_stats_fname} for OlmoEarth normalization values.')
             with open(join(self.olmo_norm_path, olmo_stats_fname), mode = 'rb') as f:
-                self.norm_values['OLMO'] = pickle.load(f)
+                olmo_stats = pickle.load(f)
+            assert self.olmo_dims in (64, 128), f"olmo_dims must be 64 or 128, got {self.olmo_dims}"
+            # Per-dim statistics, so the first olmo_dims entries are exactly the stats of the kept dims
+            self.norm_values['OLMO'] = {k: np.asarray(v)[: self.olmo_dims] for k, v in olmo_stats.items()}
             self.olmo_handle = h5py.File(join(self.olmo_h5_path, olmo_fname), 'r')
             assert int(self.olmo_handle.attrs['year']) == 2020 and self.olmo_handle['done'][:].all(), f"{olmo_fname} is not a finished 2020 build"
 
@@ -1097,7 +1101,7 @@ class GEDIDataset(Dataset):
 
         # OlmoEarth embeddings: int8 signed-square-root quantised, -128 = nodata (NOT TESSERA's emb * scale)
         if self.olmo :
-            olmo_q = self.olmo_handle['embeddings'][idx, self.center_x - self.window_size : self.center_x + self.window_size + 1, self.center_y - self.window_size : self.center_y + self.window_size + 1, :]
+            olmo_q = self.olmo_handle['embeddings'][idx, self.center_x - self.window_size : self.center_x + self.window_size + 1, self.center_y - self.window_size : self.center_y + self.window_size + 1, : self.olmo_dims]
             olmo_data = olmo_q.astype(np.float32)
             olmo_data = np.sign(olmo_data) * (np.abs(olmo_data) / 127.5) ** 2
             olmo_data = normalize_data(olmo_data, self.norm_values['OLMO'], 'mean_std', None, False)

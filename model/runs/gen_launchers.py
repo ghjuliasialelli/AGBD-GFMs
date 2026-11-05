@@ -116,6 +116,7 @@ DEFAULTS = {
     'step_size': '30',
     'tessera': '"false"',
     'olmo': '"false"',
+    'olmo_dims': '128',
     'test_mask': '"false"',
     'tmpdir': '"true"',
     'topo': '"true"',
@@ -595,6 +596,10 @@ for _src, _dst in [('model/runs/lp-mlp/lp_tessera_lite.sh', 'model/runs/lp-mlp/l
                    ('model/runs/nico/tessera_lite.sh', 'model/runs/nico/olmo_lite.sh')] :
     SPECS[_dst] = {'knobs': {**SPECS[_src]['knobs'], 'tessera': '"false"', 'olmo': '"true"'}, 'sbatch': dict(SPECS[_src]['sbatch'])}
 
+# Matryoshka ablation: nico_film on the first 64 OlmoEarth dims only.
+SPECS['model/runs/nico/olmo64_lite.sh'] = {'knobs': {**SPECS['model/runs/nico/olmo_lite.sh']['knobs'], 'olmo_dims': '64'},
+                                           'sbatch': dict(SPECS['model/runs/nico/olmo_lite.sh']['sbatch'])}
+
 TEMPLATE = r'''#!/bin/bash
 #SBATCH --nodes={sbatch_nodes}
 #SBATCH --cpus-per-task={sbatch_cpus_per_task}
@@ -630,6 +635,8 @@ tessera={tessera}
 
 # Whether to use OlmoEarth v1.3 embeddings (Lite only)
 olmo={olmo}
+# Leading OlmoEarth dims to keep: 128 (all) or 64 (the standalone Matryoshka embedding)
+olmo_dims={olmo_dims}
 
 # Subset of AEF embedding bands ("all" = the full 64). Drives --in_features only.
 aef_bands={aef_bands}
@@ -1109,7 +1116,7 @@ fi
 # olmoearth embeddings
 if [ "$olmo" == "true" ]
 then
-    in_features=$((in_features+128)) # + 128 because 128dim OlmoEarth embeddings
+    in_features=$((in_features+olmo_dims)) # OlmoEarth dims kept (128, or 64 for Matryoshka)
 fi
 
 # Output path and model name #####################################################################################
@@ -1231,6 +1238,7 @@ torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=$NNODES --npro
                     --aef $aef \
                     --tessera $tessera \
                     --olmo $olmo \
+                    --olmo_dims $olmo_dims \
                     --hold_out_region $hold_out_region \
                     --predict $predict \
                     --ensemble $ensemble \

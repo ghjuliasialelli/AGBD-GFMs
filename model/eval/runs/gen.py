@@ -21,6 +21,7 @@ SPECS = [
     ("lp_olmo_lite",             "lp",        "olmo_lite"),
     ("mlp_olmo_lite",            "mlp",       "olmo_lite"),
     ("nico_olmo_lite",           "nico_film", "ens_olmo_lite"),
+    ("nico_olmo64_lite",         "nico_film", "ens_olmo64_lite"),
     ("nico_aef",                 "nico_film", "ens_aef"),
     ("nico_aef_latlon",          "nico_film", "ens_aef_latlon"),
     ("nico_aef_lite",            "nico_film", "ens_aef_lite"),

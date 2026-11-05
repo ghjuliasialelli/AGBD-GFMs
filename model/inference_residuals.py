@@ -272,7 +272,7 @@ def init_args_dataset(args) :
                     'gamma': 0.1, 'l2': 0.0, 'patience': 3, 'min_delta': 0.0, 'reweighting': None, 'tile_name': None, 'clip': True, 'output_path': None, 'n_models': None, 'patch_size': [25, 25], \
                     'crop': False, 'padding_mode': 'zeros', 'mixed': False, 'ndvi': False, 'teacher': '', 'teacher_inpaint': False, 'returns': 'dense', 'agb_residuals': False, \
                     'agb_residuals_film': False, 'agb_residuals_file': 'N/A', 'agb_res_all': False, 'agb_res_one': 'N/A', 'log_transform' : False, 'sim_dist': False, 'hold_out_region': None,
-                    'lite_eval_big': False, 'lite_chunk_size': 1, 'aef': False, 'aef_bands': None, 'keep_region': False, 'drop_overlaps': False, 'tessera': False, 'olmo': False, 'temp_ablation': False,
+                    'lite_eval_big': False, 'lite_chunk_size': 1, 'aef': False, 'aef_bands': None, 'keep_region': False, 'drop_overlaps': False, 'tessera': False, 'olmo': False, 'olmo_dims': 128, 'temp_ablation': False,
                     'trained_years': [], 'years_stats': None, 'subsample_2020': False}
     for key, value in default_args.items() :
         if key not in args : setattr(args, key, value)
