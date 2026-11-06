@@ -66,6 +66,12 @@ comparison/maps/plots/archive_20260720_prefix_encode_tile/
 comparison/maps/features/archive_20260720_prefix_encode_tile/
 comparison/maps/regen_dem_bilinear.py
 comparison/maps/warp_aef_to_tile_crs.py
+comparison/agbref/plots/comparison_combined_17183109-1_notrain_skip_jap_mean_max500.png
+comparison/agbref/results/broken_cci_rasterio144_20261019/
+comparison/agbref/results/comparison_results_17183109-1.npz
+comparison/agbref/results/*.csv
+
+model/eval/results/*.h5
 
 # LaTeX source + figures for the paper. Lives here for convenience but is
 # authored in Overleaf, and 4 of its imgs/*.png were byte-identical copies of
@@ -92,3 +98,5 @@ benchmark_pangaea/results/20260930_080105_f8cb5c_terramind_tiny_lora_reg_upernet
 data/aef/distribution/training_coordinates.csv
 
 model/wandb/*
+.aider*
+

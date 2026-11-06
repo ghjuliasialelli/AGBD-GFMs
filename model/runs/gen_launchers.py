@@ -600,6 +600,11 @@ for _src, _dst in [('model/runs/lp-mlp/lp_tessera_lite.sh', 'model/runs/lp-mlp/l
 SPECS['model/runs/nico/olmo64_lite.sh'] = {'knobs': {**SPECS['model/runs/nico/olmo_lite.sh']['knobs'], 'olmo_dims': '64'},
                                            'sbatch': dict(SPECS['model/runs/nico/olmo_lite.sh']['sbatch'])}
 
+# AEF + OlmoEarth combined, input-level concatenation: 64 + olmo_dims channels, in the order AEF then OLMO.
+for _dst, _dims in [('model/runs/nico/aef_olmo_lite.sh', '128'), ('model/runs/nico/aef_olmo64_lite.sh', '64')] :
+    SPECS[_dst] = {'knobs': {**SPECS['model/runs/nico/olmo_lite.sh']['knobs'], 'aef': '"true"', 'olmo_dims': _dims},
+                   'sbatch': dict(SPECS['model/runs/nico/olmo_lite.sh']['sbatch'])}
+
 TEMPLATE = r'''#!/bin/bash
 #SBATCH --nodes={sbatch_nodes}
 #SBATCH --cpus-per-task={sbatch_cpus_per_task}
