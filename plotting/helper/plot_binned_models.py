@@ -75,6 +75,8 @@ def parse_arguments():
     parser.add_argument('--max_agb', type=int, default=500, help='Upper edge of the last bin (Mg/ha).')
     parser.add_argument('--out', type=str, required=True, help='Output image path (e.g. .../imgs/binned.png).')
     parser.add_argument('--dpi', type=int, default=300, help='Figure DPI.')
+    parser.add_argument('--ymin', type=float, default=None,
+                        help='Lower y-limit of the residual panel, to make room for a tall legend (default: auto).')
     args = parser.parse_args()
 
     models = []
@@ -85,7 +87,7 @@ def parse_arguments():
         color = spec[2] if len(spec) >= 3 else DEFAULT_COLORS[i % len(DEFAULT_COLORS)]
         hatch = DEFAULT_HATCHES[i % len(DEFAULT_HATCHES)]
         models.append({'path': path, 'label': label, 'color': color, 'hatch': hatch})
-    return models, args.bin_size, args.max_agb, args.out, args.dpi
+    return models, args.bin_size, args.max_agb, args.out, args.dpi, args.ymin
 
 
 def load_residuals(path):
@@ -113,7 +115,7 @@ def overall_metrics(residuals, labels):
 
 if __name__ == "__main__":
 
-    models, bin_size, max_agb, out_path, dpi = parse_arguments()
+    models, bin_size, max_agb, out_path, dpi, ymin = parse_arguments()
 
     bins = np.arange(0, max_agb + 1, bin_size)
     lbs, ubs = bins[:-1], bins[1:]
@@ -169,6 +171,8 @@ if __name__ == "__main__":
     ax.set_xticks(range(n_bins))
     ax.set_xticklabels(labels_x)
     ax.set_xlim(-0.5, n_bins - 0.5)
+    if ymin is not None:
+        ax.set_ylim(bottom=ymin)
     ax.set_xlabel('AGB bins (Mg/ha)', fontsize=14)
     ax.set_ylabel('AGBD Test residuals ($AGB_{pred} - AGB_{GEDI}$)', fontsize=14)
     ax.axhline(0, color='black', linestyle='--', alpha=0.6, zorder=2)

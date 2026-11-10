@@ -11,7 +11,9 @@ and writes to the output HDF5 file with this structure:
 
 Dequantise at use time:  patch = emb[i].astype(float32) * scl[i][..., None]
 Out-of-coverage samples carry NaN scales, index-aligned with the source.
-Source: https://github.com/ucam-eo/geotessera
+Source: the npy/v1 tiles on Source Cooperative (https://data.source.coop/tessera/tessera/npy/v1).
+The original builds used the geotessera package's registry, which is no longer usable: see the note above
+`TileFetcher._fetch`. A tile that fails to download is now an error, not a silently missing tile.
 
 Usage:
     python download.py  --input <path to AGBD-Lite-{split}.h5>
@@ -31,19 +33,23 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import logging
 import os
+import shutil
 import time
+import urllib.request
 from collections import defaultdict
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 import h5py
 import numpy as np
+import pyarrow.parquet as pq
 from pyproj import Transformer
 from rasterio.transform import Affine, from_origin
 
-from geotessera import GeoTessera
+# from geotessera import GeoTessera  # no longer usable, see the note above TileFetcher._fetch
 from geotessera.registry import tile_from_world
 from geotessera.store import _zone_for_lon
 
@@ -56,6 +62,42 @@ PX = 10.0  # metres per pixel
 # AGBD stores 12 S2 bands starting with B01, so RGB (B04, B03, B02) is at
 # indices 3, 2, 1. Adjust if your file differs.
 S2_RGB_IDX = (3, 2, 1)
+
+BASE_URL = "https://data.source.coop/tessera/tessera/npy/v1"
+# Paths in the manifest are relative to this folder of another bucket, which has the same year/grid_* layout.
+MANIFEST_ROOT = "global_0.1_degree_representation/"
+HEADERS = {"User-Agent": "agbd-gfms/tessera"}  # source.coop refuses Python's default User-Agent
+
+
+def tile_key(tile: tuple[float, float]) -> tuple[float, float]:
+    return round(tile[0], 2), round(tile[1], 2)
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while b := f.read(1 << 24):
+            h.update(b)
+    return h.hexdigest()
+
+
+def load_manifest(cache_dir: Path, year: int) -> tuple[dict[tuple[float, float], str], str]:
+    """{tile: 'year/grid_X_Y'} of the npy/v1 tiles for `year`, and the SHA-256 of the manifest."""
+    path = Path(cache_dir) / "manifest.parquet"
+    if not path.exists():
+        tmp = path.with_suffix(".tmp")
+        req = urllib.request.Request(f"{BASE_URL}/manifest.parquet", headers=HEADERS)
+        with urllib.request.urlopen(req, timeout=300) as r, open(tmp, "wb") as f:
+            shutil.copyfileobj(r, f, 1 << 20)
+        tmp.replace(path)
+    t = pq.read_table(path, filters=[("year", "=", year)], columns=["lon", "lat", "grid_path"]).to_pandas()
+    assert len(t) > 0, f"no {year} tiles in the manifest"
+    tiles = {}
+    for lon, lat, grid in zip(t.lon, t.lat, t.grid_path):
+        assert MANIFEST_ROOT in grid, f"unexpected manifest path {grid}"
+        tiles[tile_key((lon, lat))] = grid.split(MANIFEST_ROOT)[1].rsplit("/", 1)[0]
+    assert len(tiles) == len(t), "duplicate tiles in the manifest"
+    return tiles, sha256_file(path)
 
 
 def tile_epsg(tlon: float, tlat: float) -> int:
@@ -117,12 +159,15 @@ class TileFetcher:
 
     def __init__(
         self,
-        gt: GeoTessera,
+        manifest: dict[tuple[float, float], str],
+        tiles_dir: Path,
         tile_refs: dict[tuple[float, float], int],
         workers: int,
         verbose: bool,
+        retries: int = 6,
     ):
-        self.gt = gt
+        self.manifest, self.tiles_dir, self.retries = manifest, Path(tiles_dir), retries
+        self.n_bytes = 0
         self.tile_refs = dict(tile_refs)
         self.verbose = verbose
         self.pool = ThreadPoolExecutor(max_workers=workers)
@@ -136,43 +181,101 @@ class TileFetcher:
             return
         self.futures[tile] = self.pool.submit(self._fetch, tile)
 
+    def _with_retries(self, func):
+        for attempt in range(self.retries):
+            try:
+                return func()
+            except Exception as exc:
+                if attempt == self.retries - 1:
+                    raise
+                print(f"  retry {attempt + 1}/{self.retries - 1}: {exc!r}", flush=True)
+                time.sleep(2 ** attempt)
+
+    def _get_sums(self, rel: str) -> dict[str, str]:
+        def read():
+            req = urllib.request.Request(f"{BASE_URL}/{rel}/SHA256", headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return r.read().decode()
+        pairs = (line.split() for line in self._with_retries(read).splitlines() if line.strip())
+        return {name: digest for digest, name in pairs}
+
+    def _download(self, url: str, dst: Path, digest: str) -> None:
+        if dst.exists() and sha256_file(dst) == digest:
+            return
+
+        def attempt():
+            tmp, h = dst.with_suffix(".part"), hashlib.sha256()
+            req = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=300) as r, open(tmp, "wb") as f:
+                while b := r.read(1 << 20):
+                    f.write(b)
+                    h.update(b)
+                    self.n_bytes += len(b)
+            if h.hexdigest() != digest:
+                raise IOError(f"checksum mismatch for {url}")
+            tmp.replace(dst)
+        self._with_retries(attempt)
+
+    # NOT USABLE ANYMORE. The tiles used to be fetched through the geotessera package's registry, served from
+    # dl2.geotessera.org. That host could not be reached anymore from our machines (checked 2026-11-10), and the
+    # registry cannot be initialised without it, so we migrated to the npy/v1 tiles on Source Cooperative.
+    # This is the same data: 853 patches of TESSERA-Lite-test.h5, built the old way in April 2026, were
+    # re-extracted from Source Cooperative (30 random tiles) and are bit-identical, embeddings and scales.
+    # A failed fetch used to be reported as a missing tile (silent NaN pixels); it now raises instead.
+    #
+    # def _fetch(self, tile: tuple[float, float]) -> dict | None:
+    #     tlon, tlat = tile
+    #     try:
+    #         emb_file = self.gt.registry.fetch(
+    #             year=YEAR, lon=tlon, lat=tlat,
+    #             is_scales=False, progressbar=False,
+    #         )
+    #         scl_file = self.gt.registry.fetch(
+    #             year=YEAR, lon=tlon, lat=tlat,
+    #             is_scales=True, progressbar=False,
+    #         )
+    #         return self.open_tile(tile, emb_file, scl_file)
+    #     except Exception as exc:
+    #         if self.verbose:
+    #             print(f"  tile ({tlon:+.2f},{tlat:+.2f}) MISSING: {exc}")
+    #         return None
+
     def _fetch(self, tile: tuple[float, float]) -> dict | None:
-        tlon, tlat = tile
-        try:
-            emb_file = self.gt.registry.fetch(
-                year=YEAR, lon=tlon, lat=tlat,
-                is_scales=False, progressbar=False,
-            )
-            scl_file = self.gt.registry.fetch(
-                year=YEAR, lon=tlon, lat=tlat,
-                is_scales=True, progressbar=False,
-            )
-            # mmap: patch extraction only touches a 25x25 region of a
-            # ~1000x1000 tile, so the OS only pages in what we read and
-            # can evict under pressure. Drastically cuts resident RAM.
-            tile_emb = np.load(emb_file, mmap_mode="r")
-            tile_scl = np.load(scl_file, mmap_mode="r")
-            if tile_scl.ndim == 3:
-                tile_scl = tile_scl[..., 0]
-            crs = f"EPSG:{tile_epsg(tlon, tlat)}"
-            to_utm = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
-            to_wgs = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
-            affine = compute_tile_affine(tlon, tlat, to_utm)
-            return {
-                "emb": tile_emb,
-                "scl": tile_scl,
-                "crs": crs,
-                "affine": affine,
-                "inv_affine": ~affine,
-                "to_utm": to_utm,
-                "to_wgs": to_wgs,
-                "emb_path": Path(emb_file),
-                "scl_path": Path(scl_file),
-            }
-        except Exception as exc:
-            if self.verbose:
-                print(f"  tile ({tlon:+.2f},{tlat:+.2f}) MISSING: {exc}")
+        rel = self.manifest.get(tile_key(tile))
+        if rel is None:  # outside TESSERA's coverage: these pixels stay NaN
             return None
+        name, sums = rel.split("/")[1], self._get_sums(rel)
+        emb, scl = self.tiles_dir / f"{name}.npy", self.tiles_dir / f"{name}_scales.npy"
+        self._download(f"{BASE_URL}/{rel}/{emb.name}", emb, sums[emb.name])
+        self._download(f"{BASE_URL}/{rel}/{scl.name}", scl, sums[scl.name])
+        return self.open_tile(tile, emb, scl)
+
+    @staticmethod
+    def open_tile(tile: tuple[float, float], emb_file, scl_file) -> dict:
+        """Open a downloaded tile, with the geometry needed to extract patches from it."""
+        tlon, tlat = tile
+        # mmap: patch extraction only touches a 25x25 region of a
+        # ~1000x1000 tile, so the OS only pages in what we read and
+        # can evict under pressure. Drastically cuts resident RAM.
+        tile_emb = np.load(emb_file, mmap_mode="r")
+        tile_scl = np.load(scl_file, mmap_mode="r")
+        if tile_scl.ndim == 3:
+            tile_scl = tile_scl[..., 0]
+        crs = f"EPSG:{tile_epsg(tlon, tlat)}"
+        to_utm = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
+        to_wgs = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
+        affine = compute_tile_affine(tlon, tlat, to_utm)
+        return {
+            "emb": tile_emb,
+            "scl": tile_scl,
+            "crs": crs,
+            "affine": affine,
+            "inv_affine": ~affine,
+            "to_utm": to_utm,
+            "to_wgs": to_wgs,
+            "emb_path": Path(emb_file),
+            "scl_path": Path(scl_file),
+        }
 
     def get(self, tile: tuple[float, float]) -> dict | None:
         """Block until tile is loaded (or known-missing) and return its data."""
@@ -384,8 +487,11 @@ def run_extraction(
     print(f"{len(tile_to_local):,} primary tiles, "
           f"{len(tile_refs):,} unique tiles incl. neighbours")
 
-    gt = GeoTessera(embeddings_dir=str(cache_dir))
-    fetcher = TileFetcher(gt, tile_refs, workers=workers, verbose=verbose)
+    # Not usable anymore, see the note above TileFetcher._fetch:
+    # gt = GeoTessera(embeddings_dir=str(cache_dir))
+    # fetcher = TileFetcher(gt, tile_refs, workers=workers, verbose=verbose)
+    manifest, _ = load_manifest(cache_dir, YEAR)
+    fetcher = TileFetcher(manifest, cache_dir, tile_refs, workers=workers, verbose=verbose)
 
     for t in processing_order[:lookahead]:
         fetcher.submit(t)

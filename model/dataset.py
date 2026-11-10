@@ -12,7 +12,7 @@ import h5py
 import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
-from os.path import join, isdir
+from os.path import join, isdir, exists
 import pickle
 from os.path import join
 from datetime import datetime, timedelta
@@ -779,14 +779,18 @@ class GEDIDataset(Dataset):
 
         # Prepare for using TESSERA embeddings
         if self.tessera :
-            assert self.lite, "TESSERA embeddings are currently only supported with the Lite dataset."
-            assert not (self.lite_eval_big and self.mode == 'test'), "TESSERA embeddings are not available for the non-Lite test set."
-            tessera_fname = f'TESSERA-Lite-{self.mode}.h5'
-            tessera_stats_fname = "TESSERA_statistics_2020_global_lite.pkl"
+            assert self.lite, "TESSERA embeddings are currently only supported for models trained on the Lite dataset."
+            if self.lite_and_test : # stop before anything runs if the full AGBD test set has not been built yet
+                missing = [fname for fname in (f'TESSERA-test-{year}.h5' for year in self.years) if not exists(join(self.tessera_h5_path, fname))]
+                if missing : raise FileNotFoundError(f"Full AGBD test set for TESSERA not found in {self.tessera_h5_path}: missing {missing}. Evaluate on AGBD-Lite instead (the -Lite.sh launcher), or build these files first.")
+            tessera_stats_fname = "TESSERA_statistics_2020_global_lite.pkl" # the train stats, also for the full test set
             print(f'Using file: {tessera_stats_fname} for TESSERA normalization values.')
             with open(join(self.tessera_norm_path, tessera_stats_fname), mode = 'rb') as f:
                 self.norm_values['TESSERA'] = pickle.load(f)
-            self.tessera_handle = h5py.File(join(self.tessera_h5_path, tessera_fname), 'r')
+            if self.lite_and_test : # full AGBD test set: one TESSERA-test-{year}.h5 per year, rows = tiles/start[tile] + idx
+                self.tessera_full = self.open_full_test_embeddings(self.tessera_h5_path, 'TESSERA')
+            else :
+                self.tessera_handle = h5py.File(join(self.tessera_h5_path, f'TESSERA-Lite-{self.mode}.h5'), 'r')
 
         # Prepare for using OlmoEarth embeddings
         if self.olmo :
@@ -799,24 +803,41 @@ class GEDIDataset(Dataset):
             # Per-dim statistics, so the first olmo_dims entries are exactly the stats of the kept dims
             self.norm_values['OLMO'] = {k: np.asarray(v)[: self.olmo_dims] for k, v in olmo_stats.items()}
             if self.lite_and_test : # full AGBD test set: one OLMO-test-{year}.h5 per year, rows = tiles/start[tile] + idx
-                self.olmo_full = {}
-                for year in self.years :
-                    olmo_fname = f'OLMO-test-{year}.h5'
-                    h = h5py.File(join(self.olmo_h5_path, olmo_fname), 'r')
-                    assert int(h.attrs['year']) == year and h.attrs['split'] == 'test' and h['done'][:].all(), f"{olmo_fname} is not a finished {year} test build"
-                    starts = {n.decode(): (int(s), int(c)) for n, s, c in zip(h['tiles']['name'][:], h['tiles']['start'][:], h['tiles']['count'][:])}
-                    self.olmo_full[year] = (h, starts)
-                # every indexed tile must be in the OLMO file with the same number of rows as in AGBD
-                for fname, tiles in self.index.items() :
-                    year = int(fname.split('-')[1])
-                    for tile in tiles :
-                        assert tile in self.olmo_full[year][1], f"tile {tile} ({year}) missing from OLMO-test-{year}.h5"
-                        n_agbd = self.handles[fname][tile]['GEDI']['agbd'].shape[0]
-                        assert self.olmo_full[year][1][tile][1] == n_agbd, f"tile {tile} ({year}): {self.olmo_full[year][1][tile][1]} OLMO rows vs {n_agbd} AGBD rows"
+                self.olmo_full = self.open_full_test_embeddings(self.olmo_h5_path, 'OLMO')
             else :
                 olmo_fname = f'OLMO-Lite-{self.mode}.h5'
                 self.olmo_handle = h5py.File(join(self.olmo_h5_path, olmo_fname), 'r')
                 assert int(self.olmo_handle.attrs['year']) == 2020 and self.olmo_handle['done'][:].all(), f"{olmo_fname} is not a finished 2020 build"
+
+
+    def open_full_test_embeddings(self, h5_path, name):
+        """
+        Open the {name}-test-{year}.h5 files holding an embedding source for the full AGBD test set, and check them
+        against the AGBD index. A sample (tile, idx) is at row tiles/start[tile] + idx of its year's file.
+
+        Args:
+        - h5_path (str): the directory containing the files
+        - name (str): the prefix of the files, e.g. OLMO or TESSERA
+
+        Returns:
+        - full (dict): maps each year to (open h5 file, {tile: (start, count)})
+        """
+
+        full = {}
+        for year in self.years :
+            fname = f'{name}-test-{year}.h5'
+            h = h5py.File(join(h5_path, fname), 'r')
+            assert int(h.attrs['year']) == year and h.attrs['split'] == 'test' and h['done'][:].all(), f"{fname} is not a finished {year} test build"
+            starts = {n.decode(): (int(s), int(c)) for n, s, c in zip(h['tiles']['name'][:], h['tiles']['start'][:], h['tiles']['count'][:])}
+            full[year] = (h, starts)
+        # every indexed tile must be in the file with the same number of rows as in AGBD
+        for fname, tiles in self.index.items() :
+            year = int(fname.split('-')[1])
+            for tile in tiles :
+                assert tile in full[year][1], f"tile {tile} ({year}) missing from {name}-test-{year}.h5"
+                n_agbd = self.handles[fname][tile]['GEDI']['agbd'].shape[0]
+                assert full[year][1][tile][1] == n_agbd, f"tile {tile} ({year}): {full[year][1][tile][1]} {name} rows vs {n_agbd} AGBD rows"
+        return full
 
 
     def __len__(self):
@@ -1107,8 +1128,12 @@ class GEDIDataset(Dataset):
 
         # TESSERA embeddings
         if self.tessera :
-            tessera_emb = self.tessera_handle['embeddings'][idx, self.center_x - self.window_size : self.center_x + self.window_size + 1, self.center_y - self.window_size : self.center_y + self.window_size + 1, :].astype(np.float32)
-            tessera_scl = self.tessera_handle['scales'][idx, self.center_x - self.window_size : self.center_x + self.window_size + 1, self.center_y - self.window_size : self.center_y + self.window_size + 1].astype(np.float32)
+            if self.lite_and_test :
+                tessera_h, tessera_starts = self.tessera_full[int(file_name.split('-')[1])]
+                tessera_row = tessera_starts[tile_name][0] + idx
+            else : tessera_h, tessera_row = self.tessera_handle, idx
+            tessera_emb = tessera_h['embeddings'][tessera_row, self.center_x - self.window_size : self.center_x + self.window_size + 1, self.center_y - self.window_size : self.center_y + self.window_size + 1, :].astype(np.float32)
+            tessera_scl = tessera_h['scales'][tessera_row, self.center_x - self.window_size : self.center_x + self.window_size + 1, self.center_y - self.window_size : self.center_y + self.window_size + 1].astype(np.float32)
             tessera_data = tessera_emb * tessera_scl[..., None]
             tessera_data = np.nan_to_num(tessera_data, nan = 0.0)
             tessera_data = normalize_data(tessera_data, self.norm_values['TESSERA'], 'mean_std', 0, False)

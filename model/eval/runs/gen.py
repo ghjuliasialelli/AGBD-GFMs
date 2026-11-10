@@ -33,7 +33,10 @@ SPECS = [
     ("nico_agbd_nolatlon",       "nico_film", "ens_agbd_nolatlon"),
     ("nico_agbd_s2_nolatlon",    "nico_film", "ens_agbd_s2_nolatlon"),
     ("nico_aef_olmo_lite",       "nico_film", "ens_aef_olmo_lite"),
-    ("nico_aef_olmo64_lite",       "nico_film", "ens_aef_olmo64_lite")
+    ("nico_aef_olmo64_lite",       "nico_film", "ens_aef_olmo64_lite"),
+    ("nico_aef_tessera_lite",      "nico_film", "ens_aef_tessera_lite"),
+    ("nico_olmo_tessera_lite",     "nico_film", "ens_olmo_tessera_lite"),
+    ("nico_aef_olmo_tessera_lite", "nico_film", "ens_aef_olmo_tessera_lite"),
 ]
 
 TEMPLATE = '''#!/bin/bash

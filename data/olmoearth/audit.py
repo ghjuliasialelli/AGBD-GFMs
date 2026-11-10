@@ -192,14 +192,13 @@ def _r2(X: np.ndarray, y: np.ndarray, coef: np.ndarray) -> float:
     return 1 - np.sum((y - pred) ** 2) / np.sum((y - y.mean()) ** 2)
 
 
-def alignment_check(emb: np.ndarray, s2: np.ndarray, rng: np.random.Generator) -> dict[str, float]:
+def alignment_check(feats: np.ndarray, s2: np.ndarray, rng: np.random.Generator) -> dict[str, float]:
     """R^2 of an embedding -> NDVI linear map, fitted on the stored orientation of half the samples
     and scored on the other half under several geometric transforms of the embedding patch."""
     red, nir = s2[..., S2_B04].astype(np.float32), s2[..., S2_B08].astype(np.float32)
     with np.errstate(invalid="ignore", divide="ignore"):
         ndvi = (nir - red) / (nir + red)
-    feats = dequantize(emb)  # (n, 25, 25, 128)
-    n = len(emb)
+    n = len(feats)  # feats: dequantized embeddings, (n, 25, 25, 128)
     perm = rng.permutation(n)
     fit, ev = perm[: n // 2], perm[n // 2:]
     m = 4  # crop margin so shifted versions stay inside the patch
@@ -284,7 +283,7 @@ def cmd_h5(args) -> int:
         emb = np.stack([fo["embeddings"][i] for i in pick])
         s2 = np.stack([s2_patch(int(src_idx[i])) for i in pick])
     if not full: fa.close()
-    scores = alignment_check(emb, s2, rng)
+    scores = alignment_check(dequantize(emb), s2, rng)
     best = max(scores, key=scores.get)
     print(f"alignment R^2 vs S2 NDVI (n={len(pick)} samples):")
     for k, v in sorted(scores.items(), key=lambda kv: -kv[1]): print(f"    {k:<10} {v:.4f}")
