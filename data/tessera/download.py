@@ -165,8 +165,10 @@ class TileFetcher:
         workers: int,
         verbose: bool,
         retries: int = 6,
+        accepted: dict[str, str] | None = None,
     ):
         self.manifest, self.tiles_dir, self.retries = manifest, Path(tiles_dir), retries
+        self.accepted = accepted or {}  # year/grid_X_Y/file.npy -> sha256 accepted despite the published one (accepted_checksums.txt)
         self.n_bytes = 0
         self.tile_refs = dict(tile_refs)
         self.verbose = verbose
@@ -199,8 +201,8 @@ class TileFetcher:
         pairs = (line.split() for line in self._with_retries(read).splitlines() if line.strip())
         return {name: digest for digest, name in pairs}
 
-    def _download(self, url: str, dst: Path, digest: str) -> None:
-        if dst.exists() and sha256_file(dst) == digest:
+    def _download(self, url: str, dst: Path, digest: str, accepted: str | None = None) -> None:
+        if dst.exists() and sha256_file(dst) in (digest, accepted):
             return
 
         def attempt():
@@ -211,8 +213,11 @@ class TileFetcher:
                     f.write(b)
                     h.update(b)
                     self.n_bytes += len(b)
-            if h.hexdigest() != digest:
-                raise IOError(f"checksum mismatch for {url}")
+            got = h.hexdigest()
+            if got not in (digest, accepted):
+                raise IOError(f"checksum mismatch for {url}: got {got}, published {digest}")
+            if got != digest:
+                print(f"  accepted checksum mismatch (accepted_checksums.txt): {url}", flush=True)
             tmp.replace(dst)
         self._with_retries(attempt)
 
@@ -246,8 +251,8 @@ class TileFetcher:
             return None
         name, sums = rel.split("/")[1], self._get_sums(rel)
         emb, scl = self.tiles_dir / f"{name}.npy", self.tiles_dir / f"{name}_scales.npy"
-        self._download(f"{BASE_URL}/{rel}/{emb.name}", emb, sums[emb.name])
-        self._download(f"{BASE_URL}/{rel}/{scl.name}", scl, sums[scl.name])
+        self._download(f"{BASE_URL}/{rel}/{emb.name}", emb, sums[emb.name], self.accepted.get(f"{rel}/{emb.name}"))
+        self._download(f"{BASE_URL}/{rel}/{scl.name}", scl, sums[scl.name], self.accepted.get(f"{rel}/{scl.name}"))
         return self.open_tile(tile, emb, scl)
 
     @staticmethod

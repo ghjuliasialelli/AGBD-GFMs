@@ -36,6 +36,7 @@ def parse_arguments():
     ap.add_argument("--lite-ref", default = None, help = "TESSERA-Lite-{split}.h5 to compare with (2020 only)")
     ap.add_argument("--max-nan-frac", type = float, default = 1e-3, help = "max fraction of NaN pixels over all patches")
     ap.add_argument("--max-centre-nan", type = int, default = 0, help = "max number of samples whose centre pixel is NaN")
+    ap.add_argument("--max-no-data-frac", type = float, default = 1e-3, help = "max fraction of rows whose scales are all 0, TESSERA's no-data encoding (0.05%% of TESSERA-Lite-test)")
     ap.add_argument("--n-align", type = int, default = 600, help = "samples used by the alignment check")
     ap.add_argument("--min-align-margin", type = float, default = 0.005, help = "required R^2 lead of the stored orientation")
     ap.add_argument("--allow-partial", action = "store_true", help = "debug: audit only the rows marked done")
@@ -65,7 +66,7 @@ def main() -> int:
         n_done = int(done.sum()); assert n_done > 0, "no row is done"
 
         # The whole population (of done rows)
-        nan_px, nan_centre, never, zero, bs = 0, 0, 0, 0, 4096
+        nan_px, nan_centre, never, zero, no_data, bs = 0, 0, 0, 0, 0, 4096
         per_sample_nan = np.zeros(n, np.int32)
         for s in range(0, n, bs):
             keep = done[s : s + bs]
@@ -74,13 +75,17 @@ def main() -> int:
             nan = ~np.isfinite(scl)
             per_sample_nan[s : s + bs][keep] = nan.reshape(len(scl), -1).sum(1)
             nan_px += int(nan.sum()); nan_centre += int(nan[:, 12, 12].sum()); never += int(nan.reshape(len(scl), -1).all(1).sum())
-            zero += int((emb.reshape(len(emb), -1) == 0).all(1).sum())
+            # all-zero embeddings with all-zero scales are TESSERA's no-data (also in the April TESSERA-Lite); with any other scales, something went wrong
+            all_zero, zero_scales = (emb.reshape(len(emb), -1) == 0).all(1), (scl.reshape(len(scl), -1) == 0).all(1)
+            zero += int((all_zero & ~zero_scales).sum()); no_data += int((all_zero & zero_scales).sum())
         frac = nan_px / (n_done * 625)
-        print(f"rows done {n_done:,}/{n:,}  NaN pixels {frac:.4%}  samples with any NaN {(per_sample_nan > 0).sum():,}  centre NaN {nan_centre:,}  all-NaN rows {never:,}  all-zero rows {zero:,}", flush = True)
+        print(f"rows done {n_done:,}/{n:,}  NaN pixels {frac:.4%}  samples with any NaN {(per_sample_nan > 0).sum():,}  centre NaN {nan_centre:,}  all-NaN rows {never:,}  "
+              f"no-data rows (embeddings and scales all 0) {no_data:,} ({no_data / n_done:.4%})  other all-zero rows {zero:,}", flush = True)
+        if no_data / n_done > args.max_no_data_frac: fails.append(f"no-data rows {no_data / n_done:.4%} > {args.max_no_data_frac:.4%}")
         if frac > args.max_nan_frac: fails.append(f"NaN pixel fraction {frac:.4%} > {args.max_nan_frac:.4%}")
         if nan_centre > args.max_centre_nan: fails.append(f"{nan_centre} centre pixels are NaN (> {args.max_centre_nan})")
         if never: fails.append(f"{never} done rows have no pixel at all")
-        if zero: fails.append(f"{zero} done rows have an all-zero embedding")
+        if zero: fails.append(f"{zero} done rows have an all-zero embedding but non-zero scales")
 
         # Alignment against S2 NDVI
         rng = np.random.default_rng(args.seed)

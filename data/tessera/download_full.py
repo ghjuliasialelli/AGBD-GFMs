@@ -59,6 +59,8 @@ def parse_arguments():
     ap.add_argument("--commit-every", type = int, default = 25, help = "tiles between flushes to disk")
     ap.add_argument("--max-tiles", type = int, default = None, help = "debug: process only this many tiles")
     ap.add_argument("--continue", dest = "continue_run", action = "store_true", help = "resume: only rows not marked done")
+    ap.add_argument("--accepted-checksums", default = str(Path(__file__).resolve().parent / "accepted_checksums.txt"),
+                    help = "'<sha256>  <year/grid_X_Y/file.npy>' lines: exact files accepted although they differ from the published SHA256")
     return ap.parse_args()
 
 
@@ -122,9 +124,14 @@ def main() -> None:
         if args.max_tiles: order = order[: args.max_tiles]
         print(f"{len(order):,} primary tiles to process, {len(tile_refs):,} tiles including neighbours", flush = True)
 
+        # which files were let through is part of the provenance of this output (before SWMR: it forbids new attributes)
+        lines = [l.split() for l in Path(args.accepted_checksums).read_text().splitlines() if l.strip() and not l.startswith("#")]
+        accepted = {path: sha for sha, path in lines if path.startswith(f"{args.year}/")}
+        dst.attrs["checksum_mismatch_accepted"] = "; ".join(f"{path} {sha}" for path, sha in sorted(accepted.items()))
+
         D._enable_swmr(dst)
         emb_ds, scl_ds, done_ds = dst["embeddings"], dst["scales"], dst["done"]
-        fetcher = D.TileFetcher(manifest, tiles_dir, tile_refs, args.workers, verbose = False, retries = args.retries)
+        fetcher = D.TileFetcher(manifest, tiles_dir, tile_refs, args.workers, verbose = False, retries = args.retries, accepted = accepted)
         lookahead = args.lookahead if args.lookahead is not None else 2 * args.workers
         for t in order[: lookahead]: fetcher.submit(t)
 
