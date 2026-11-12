@@ -146,6 +146,63 @@ def initialize_index_lite(fname, chunk_size, path_h5, mode = None) :
     return index, total_length
 
 
+def lite_stats_fname(prefix, stats_hold_out_region, stats_keep_region, exact_global = False) :
+    """
+    AGBD-Lite stats file for the AEF / OLMO embeddings (regional + exact global ones: data/agbd_lite/compute_holdout_stats.py).
+
+    Args:
+    - prefix (str): 'AEF' or 'OLMO'
+    - stats_hold_out_region (str or None): None for the global Lite stats, else a key of continent_to_region
+    - stats_keep_region (bool): stats of that region only (True) or of its complement (False)
+    - exact_global (bool): for the global stats, use the _exact file (computed on exactly the Lite train rows; for AEF
+      the original file was computed on ~7.4M prefix patches of the Lite tiles). Regional files are always exact.
+
+    Returns:
+    - fname (str): e.g. AEF_statistics_2020_global_lite.pkl, OLMO_statistics_2020_Europe-Australasia-Africa-NorthAmerica-SouthAmerica_lite.pkl
+    """
+    if not stats_hold_out_region : return f"{prefix}_statistics_2020_global_lite{'_exact' if exact_global else ''}.pkl"
+    if stats_hold_out_region not in continent_to_region : raise ValueError(f"Unknown region '{stats_hold_out_region}', expected one of {list(continent_to_region)}")
+    if stats_keep_region : region_str = stats_hold_out_region
+    else : region_str = '-'.join(c for c in ["Europe", "SouthAsia", "Australasia", "Africa", "NorthAmerica", "SouthAmerica"] if c != stats_hold_out_region)
+    return f"{prefix}_statistics_2020_{region_str}_lite.pkl"
+
+
+def lite_rows_for_region(mode, path_lite_mapping, path_mapping, hold_out_region, keep_region, n_rows) :
+    """
+    Geographic hold-out for AGBD-Lite. The full-AGBD path filters tiles inside `initialize_index`, but an
+    AGBD-Lite file is one flat list of samples with no tile structure, so `initialize_index_lite` cannot (and
+    did not: before this, --hold_out_region was silently ignored with --lite). This returns the AGBD-Lite rows
+    to keep, using the Lite -> original (tile, idx) mapping and the same region -> tiles definition as the
+    full-AGBD path.
+
+    Args:
+    - mode (str): train, val or test
+    - path_lite_mapping (str): directory containing mapping_lite_to_og.pkl
+    - path_mapping (str): directory containing tiles_per_region.pkl
+    - hold_out_region (str): a key of `continent_to_region`, e.g. SouthAsia
+    - keep_region (bool): keep only the region (True) or drop it (False)
+    - n_rows (int): number of rows in the AGBD-Lite file, to check the mapping against
+
+    Returns:
+    - rows (np.ndarray): sorted AGBD-Lite row indices to keep
+    """
+
+    if hold_out_region not in continent_to_region :
+        raise ValueError(f"Unknown hold_out_region {hold_out_region!r}; expected one of {list(continent_to_region)}")
+    with open(join(path_lite_mapping, 'mapping_lite_to_og.pkl'), 'rb') as f :
+        lite_to_og = pickle.load(f)[mode]
+    assert len(lite_to_og) == n_rows, f"mapping_lite_to_og[{mode}] has {len(lite_to_og)} rows, AGBD-Lite-{mode}.h5 has {n_rows}"
+    with open(join(path_mapping, 'tiles_per_region.pkl'), 'rb') as f :
+        tiles_per_region = pickle.load(f)
+    hold_out_tiles = set(str(t) for region in continent_to_region[hold_out_region] for t in tiles_per_region[region])
+    in_region = np.fromiter((str(tile) in hold_out_tiles for tile, _ in lite_to_og), dtype = bool, count = n_rows)
+    rows = np.flatnonzero(in_region if keep_region else ~in_region)
+    assert len(rows) > 0, f"AGBD-Lite {mode}: no rows left after {'keeping' if keep_region else 'holding out'} {hold_out_region}"
+    print(f"AGBD-Lite {mode}: {'keeping only' if keep_region else 'holding out'} {hold_out_region} "
+          f"({int(in_region.sum()):,} of {n_rows:,} rows in region) -> {len(rows):,} rows used")
+    return rows
+
+
 def initialize_mapping_aef(fnames, path_h5) :
     """
     This function creates a mapping from Sentinel-2 tile names, to year, to the AEF file in which it's contained.
@@ -624,7 +681,15 @@ class GEDIDataset(Dataset):
         else:
             self.index, self.length = initialize_index_lite(self.fnames[0], self.lite_chunk_size, self.h5_path)
             self.ranges = None
-        
+
+        # AGBD-Lite geographic hold-out: the n-th sample becomes row lite_rows[n] of the Lite file (and of the
+        # row-aligned AEF mapping / TESSERA-Lite / OLMO-Lite files). None = use every row, as before.
+        self.lite_rows = None
+        if self.lite and (not self.lite_and_test) and self.hold_out_region :
+            assert self.lite_chunk_size == 1, "The AGBD-Lite geographic hold-out needs lite_chunk_size = 1."
+            self.lite_rows = lite_rows_for_region(self.mode, self.aef_norm_path, self.mapping, self.hold_out_region, self.keep_region, int(self.length))
+            self.length = len(self.lite_rows)
+
         
         # Define the data to use
         self.latlon = args.latlon
@@ -716,6 +781,7 @@ class GEDIDataset(Dataset):
                     self.norm_values = pickle.load(f)
         else:
             print(f'Using file: AGBD-Lite-statistics.pkl for normalization values.')
+            if self.stats_hold_out_region : print(f'WARNING: AGBD-Lite-statistics.pkl is GLOBAL (incl. {self.stats_hold_out_region}); only the AEF / OLMO Lite stats are region-specific.')
             with open(join(self.norm_path, f"AGBD-Lite-statistics.pkl"), mode = 'rb') as f:
                 self.norm_values = pickle.load(f)
 
@@ -755,7 +821,9 @@ class GEDIDataset(Dataset):
             aef_fnames = ['California_2019.h5', 'UnitedRepublicofTanzania_2019_1-2.h5', 'California_2020.h5', 'Paraguay_2020.h5', 'UnitedRepublicofTanzania_2019_2-2.h5', 'Cuba_2020.h5', 'Nepal_2020.h5', 'NewZealand_2020.h5', 'Greece_2019.h5', 'Austria_2019.h5', 'ShaanxiProvince_2019.h5', 'FrenchGuiana_2020.h5', 'Cuba_2019.h5', 'Austria_2020.h5', 'Nepal_2019.h5', 'UnitedRepublicofTanzania_2020_1-2.h5', 'FrenchGuiana_2019.h5', 'Ghana_2020.h5', 'UnitedRepublicofTanzania_2020_2-2.h5', 'Paraguay_2019.h5', 'ShaanxiProvince_2020.h5', 'Ghana_2019.h5', 'Greece_2020.h5', 'NewZealand_2019.h5']
             aef_fnames = [f for f in aef_fnames for year in self.years if str(year) in f]
             self.aef_mapping = initialize_mapping_aef(aef_fnames, self.aef_h5_path)
-            if self.lite: aef_stats_fname = "AEF_statistics_2020_global_lite.pkl"
+            # getattr: models trained before --new_AEF_stats existed have no such key in their (eval) config
+            if self.lite: aef_stats_fname = lite_stats_fname('AEF', self.stats_hold_out_region, self.stats_keep_region, getattr(args, 'new_AEF_stats', False))
+            elif getattr(args, 'new_AEF_stats', False) : raise ValueError('--new_AEF_stats only applies to AGBD-Lite models')
             elif self.stats_hold_out_region:
                 if self.stats_keep_region: aef_region_str = self.stats_hold_out_region
                 else:
@@ -783,6 +851,7 @@ class GEDIDataset(Dataset):
             if self.lite_and_test : # stop before anything runs if the full AGBD test set has not been built yet
                 missing = [fname for fname in (f'TESSERA-test-{year}.h5' for year in self.years) if not exists(join(self.tessera_h5_path, fname))]
                 if missing : raise FileNotFoundError(f"Full AGBD test set for TESSERA not found in {self.tessera_h5_path}: missing {missing}. Evaluate on AGBD-Lite instead (the -Lite.sh launcher), or build these files first.")
+            if self.stats_hold_out_region : raise NotImplementedError("No region-specific TESSERA-Lite stats: data/agbd_lite/compute_holdout_stats.py has no TESSERA pass yet.")
             tessera_stats_fname = "TESSERA_statistics_2020_global_lite.pkl" # the train stats, also for the full test set
             print(f'Using file: {tessera_stats_fname} for TESSERA normalization values.')
             with open(join(self.tessera_norm_path, tessera_stats_fname), mode = 'rb') as f:
@@ -795,7 +864,7 @@ class GEDIDataset(Dataset):
         # Prepare for using OlmoEarth embeddings
         if self.olmo :
             assert self.lite, "OlmoEarth embeddings are currently only supported for models trained on the Lite dataset."
-            olmo_stats_fname = "OLMO_statistics_2020_global_lite.pkl" # the train stats, also for the full test set
+            olmo_stats_fname = lite_stats_fname('OLMO', self.stats_hold_out_region, self.stats_keep_region) # the train stats, also for the full test set
             print(f'Using file: {olmo_stats_fname} for OlmoEarth normalization values.')
             with open(join(self.olmo_norm_path, olmo_stats_fname), mode = 'rb') as f:
                 olmo_stats = pickle.load(f)
@@ -847,7 +916,8 @@ class GEDIDataset(Dataset):
             
         # Find the file, tile, and row index corresponding to this chunk
         file_name, tile_name, idx = find_index_for_chunk(self.index, self.ranges, n, self.length, self.lite_chunk_size, self.oversampling, self.lite and not self.lite_and_test, self.drop_overlaps)
-        
+        if self.lite_rows is not None : idx = int(self.lite_rows[idx]) # AGBD-Lite geographic hold-out
+
         # Get the file handle
         if tile_name is not None: f = self.handles[file_name][tile_name]
         else: 

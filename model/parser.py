@@ -83,6 +83,7 @@ def setup_parser():
     # callers (train + eval scripts) must pass them explicitly. No fallback.
     parser.add_argument("--stats_hold_out_region", type = StrOrNone, required = True, help = 'Region whose stats file to load. Pass "None" for global stats.')
     parser.add_argument("--stats_keep_region", type = str2bool, required = True, help = 'Whether the stats file is for the kept region (true) or its complement (false).')
+    parser.add_argument("--new_AEF_stats", type = str2bool, default = False, help = 'AGBD-Lite only: normalise AEF with AEF_statistics_2020_global_lite_exact.pkl (computed on exactly the Lite train rows, data/agbd_lite/compute_holdout_stats.py) instead of AEF_statistics_2020_global_lite.pkl (computed on ~7.4M prefix patches of the Lite tiles, a bug in data/aef/compute_statistics.py --lite). Regional Lite stats are always exact.')
 
     parser.add_argument("--predict", type = str, default = 'agbd', help = 'Whether to predict agbd, rh98 or biome.')
 

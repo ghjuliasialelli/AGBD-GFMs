@@ -6,7 +6,8 @@ One shared TEMPLATE + a per-experiment knob table (SPECS). Previously these 18 s
 were maintained by hand and had drifted into 9 near-identical skeletons; this collapses
 them into one. Run from the repo root or model/:
 
-    python3 model/runs/gen_launchers.py
+    python3 model/runs/gen_launchers.py            # all launchers
+    python3 model/runs/gen_launchers.py holdout    # only those whose path contains 'holdout'
 
 Every emitted script is config-driven (sources config.sh, no hardcoded paths).
 
@@ -28,6 +29,7 @@ drift to fix. model/runs/film/ was deleted (legacy, superseded by ensemble FiLM)
 """
 
 import os
+import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -35,6 +37,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 DEFAULTS = {
     'aef': '"false"',
     'aef_bands': '("all")',
+    'new_AEF_stats': '"false" # Lite: AEF_statistics_2020_global_lite_exact.pkl (exact Lite rows) instead of the original global Lite file',
     'agb_res_all': '"false"',
     'agb_res_one': '"mean"',
     'agb_residuals': '"false" # (input)',
@@ -66,6 +69,8 @@ DEFAULTS = {
     'gamma': '0.1',
     'gedi_dates': '"false"',
     'geo_ablation': '"false"',
+    'geo_region_stats': '"false" # true: normalise with the stats computed WITHOUT the held-out region (stats_hold_out_region)',
+    'geo_regions': '("Europe" "SouthAsia" "Australasia" "Africa" "NorthAmerica" "SouthAmerica") # keys of continent_to_region in dataset.py',
     'l2': '0.00001',
     'latlon': '"true"',
     'lc': '"true"',
@@ -137,6 +142,7 @@ SBATCH_DEFAULTS = {
     'sbatch_mem_per_cpu': '8G',
     'sbatch_nodes': '1',
     'sbatch_time': '120:00:00',
+    'sbatch_log': 'training-%A',
 }
 
 # Per-experiment overrides. Only what differs from DEFAULTS.
@@ -612,12 +618,36 @@ for _dst, _extra in [('model/runs/nico/aef_tessera_lite.sh', {'aef': '"true"', '
     SPECS[_dst] = {'knobs': {**SPECS['model/runs/nico/olmo_lite.sh']['knobs'], 'tessera': '"true"', **_extra},
                    'sbatch': dict(SPECS['model/runs/nico/olmo_lite.sh']['sbatch'])}
 
+# Leave-one-region-out generalization runs on AGBD-Lite, for AEF vs AEF + OlmoEarth (128). Each is the in-distribution
+# launcher with geo_ablation on, so the pair differs from nico/aef_lite.sh / nico/aef_olmo_lite.sh ONLY in the held-out
+# region. Array tasks 1-3 hold out SouthAsia, Africa, SouthAmerica (seed 3+t); tasks 4-6 repeat them with a second seed.
+# The held-out region is dropped from train AND val (dataset.lite_rows_for_region), and the AEF / OLMO inputs are
+# normalised with stats computed without it (geo_region_stats -> --stats_hold_out_region R, files
+# {AEF,OLMO}_statistics_2020_<other continents>_lite.pkl from data/agbd_lite/compute_holdout_stats.py), so nothing of R
+# reaches training. The in-distribution baselines keep the global Lite stats.
+for _dst, _src in [('model/runs/nico/aef_lite_holdout.sh', 'model/runs/nico/aef_lite.sh'),
+                   ('model/runs/nico/aef_olmo_lite_holdout.sh', 'model/runs/nico/aef_olmo_lite.sh')] :
+    SPECS[_dst] = {'knobs': {**SPECS[_src]['knobs'], 'geo_ablation': '"true"', 'geo_region_stats': '"true"',
+                             'geo_regions': '("SouthAsia" "Africa" "SouthAmerica") # keys of continent_to_region in dataset.py'},
+                   'sbatch': {**SPECS[_src]['sbatch'], 'sbatch_array': '1-6', 'sbatch_log': 'training-%A-%a'}}
+
+# In-distribution baselines for the hold-out runs, retrained with the CORRECTED global AEF Lite stats. The original
+# AEF_statistics_2020_global_lite.pkl was computed on ~7.4M prefix patches of the 281 Lite tiles, not on the 371,849 Lite
+# rows (data/aef/compute_statistics.py --lite read mapping_lite_to_og['train'] as (tile, n_patches); it is a shuffled list
+# of (tile, idx), so each tile got a random cap). The regional stats of the *_lite_holdout.sh runs are exact, so these
+# baselines differ from them only in the held-out region. Identical to nico/aef_lite.sh / nico/aef_olmo_lite.sh otherwise;
+# 2 array tasks = 2 seeds (4, 5), like the 2 seeds per region of the hold-out runs. OLMO stats unchanged (already exact).
+for _dst, _src in [('model/runs/nico/aef_lite_newstats.sh', 'model/runs/nico/aef_lite.sh'),
+                   ('model/runs/nico/aef_olmo_lite_newstats.sh', 'model/runs/nico/aef_olmo_lite.sh')] :
+    SPECS[_dst] = {'knobs': {**SPECS[_src]['knobs'], 'new_AEF_stats': '"true"'},
+                   'sbatch': {**SPECS[_src]['sbatch'], 'sbatch_array': '1-2', 'sbatch_log': 'training-%A-%a'}}
+
 TEMPLATE = r'''#!/bin/bash
 #SBATCH --nodes={sbatch_nodes}
 #SBATCH --cpus-per-task={sbatch_cpus_per_task}
 #SBATCH --time={sbatch_time}
-#SBATCH --output=/cluster/scratch/gsialelli/logs/training-%A.txt
-#SBATCH --error=/cluster/scratch/gsialelli/logs/training-%A.txt
+#SBATCH --output=/cluster/scratch/gsialelli/logs/{sbatch_log}.txt
+#SBATCH --error=/cluster/scratch/gsialelli/logs/{sbatch_log}.txt
 #SBATCH --mem-per-cpu={sbatch_mem_per_cpu}
 #SBATCH --job-name={sbatch_job_name}
 #SBATCH --array={sbatch_array}
@@ -652,6 +682,7 @@ olmo_dims={olmo_dims}
 
 # Subset of AEF embedding bands ("all" = the full 64). Drives --in_features only.
 aef_bands={aef_bands}
+new_AEF_stats={new_AEF_stats}
 drop_overlaps={drop_overlaps}
 
 # Whether to move everything to $TMPDIR, or read everything from $SCRATCH
@@ -900,20 +931,26 @@ fi
 
 # Which region to hold out for testing
 geo_ablation={geo_ablation}
+geo_region_stats={geo_region_stats}
 if [ "$geo_ablation" == "true" ]
 then
-    regions=("Europe" "South Asia" "Australasia" "Africa" "North America" "South America")
+    regions={geo_regions}
     if [ "$AGBD_ENV" == "cluster" ]
     then
         region_id=$SLURM_ARRAY_TASK_ID
     else
         region_id=1
     fi
-    hold_out_region=${{regions[$((region_id-1))]}} # because array starts at 1
+    # Array task t holds out regions[(t-1) % n]: with n regions, tasks 1..n are one seed and n+1..2n a second
+    # one (train.py seeds with 3 + SLURM_ARRAY_TASK_ID, so every task gets its own seed)
+    hold_out_region=${{regions[$(( (region_id-1) % ${{#regions[@]}} ))]}}
     echo "Holding out region: $hold_out_region"
+    if [ "$geo_region_stats" == "true" ]; then stats_hold_out_region="$hold_out_region"; else stats_hold_out_region="None"; fi
 else
     hold_out_region="None"
+    stats_hold_out_region="None"
 fi
+echo "Normalisation stats: ${{stats_hold_out_region}} (None = global)"
 
 
 # Features counts and args checks ################################################################################################
@@ -1156,8 +1193,9 @@ torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=$NNODES --npro
         train.py    --model_path $model_path \
                     --model_name $model_name \
                     --dataset_path $dataset_path \
-                    --stats_hold_out_region "None" \
+                    --stats_hold_out_region "$stats_hold_out_region" \
                     --stats_keep_region "false" \
+                    --new_AEF_stats "$new_AEF_stats" \
                     --augment "false" \
                     --norm "false" \
                     --arch $arch \
@@ -1251,7 +1289,7 @@ torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=$NNODES --npro
                     --tessera $tessera \
                     --olmo $olmo \
                     --olmo_dims $olmo_dims \
-                    --hold_out_region $hold_out_region \
+                    --hold_out_region "$hold_out_region" \
                     --predict $predict \
                     --ensemble $ensemble \
                     --n_members $n_members \
@@ -1259,7 +1297,12 @@ torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=$NNODES --npro
 
 
 def main():
+    # Optional filters: `python3 model/runs/gen_launchers.py holdout` writes only the launchers whose path contains
+    # one of the given substrings (some checked-in launchers carry hand edits that a full regeneration would undo).
+    filters = sys.argv[1:]
     for relpath, spec in sorted(SPECS.items()):
+        if filters and not any(f in relpath for f in filters):
+            continue
         vals = dict(DEFAULTS)
         vals.update(spec['knobs'])
         vals.update(SBATCH_DEFAULTS)
