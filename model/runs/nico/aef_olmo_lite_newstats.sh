@@ -2,11 +2,11 @@
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=120:00:00
-#SBATCH --output=/cluster/scratch/gsialelli/logs/training-%A-%a.txt
-#SBATCH --error=/cluster/scratch/gsialelli/logs/training-%A-%a.txt
+#SBATCH --output=/cluster/scratch/gsialelli/logs/training-%A.txt
+#SBATCH --error=/cluster/scratch/gsialelli/logs/training-%A.txt
 #SBATCH --mem-per-cpu=8G
 #SBATCH --job-name=models
-#SBATCH --array=1-2
+#SBATCH --array=1-1
 #SBATCH --gpus=rtx_4090:1
 
 # --- AGBD-GFMs config ----------------------------------------------------------
@@ -297,8 +297,7 @@ then
     else
         region_id=1
     fi
-    # Array task t holds out regions[(t-1) % n]: with n regions, tasks 1..n are one seed and n+1..2n a second
-    # one (train.py seeds with 3 + SLURM_ARRAY_TASK_ID, so every task gets its own seed)
+    # Array task t holds out regions[(t-1) % n] (tasks n+1..2n would repeat them; the seed is 3 + t unless `seed` is set)
     hold_out_region=${regions[$(( (region_id-1) % ${#regions[@]} ))]}
     echo "Holding out region: $hold_out_region"
     if [ "$geo_region_stats" == "true" ]; then stats_hold_out_region="$hold_out_region"; else stats_hold_out_region="None"; fi
@@ -307,6 +306,10 @@ else
     stats_hold_out_region="None"
 fi
 echo "Normalisation stats: ${stats_hold_out_region} (None = global)"
+
+# Seed: fixed across array tasks if set (exported to train.py), else 3 + SLURM_ARRAY_TASK_ID
+seed="" # empty: train.py seeds with 3 + SLURM_ARRAY_TASK_ID; set: that seed for EVERY array task
+if [ -n "$seed" ]; then export AGBD_SEED="$seed"; echo "Seed: $seed (same for every array task)"; fi
 
 
 # Features counts and args checks ################################################################################################

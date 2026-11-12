@@ -32,10 +32,13 @@ from config import get_paths, WANDB_ENTITY
 # Debugging
 torch._logging.set_logs(dynamo=logging.DEBUG)
 
-try: 
-    seed_everything(3 + int(os.environ.get('SLURM_ARRAY_TASK_ID')), workers = True)
-except: 
-    seed_everything(3, workers = True)
+if os.environ.get('AGBD_SEED') : # same seed for every array task (launcher knob `seed`), e.g. one task per held-out region
+    seed_everything(int(os.environ['AGBD_SEED']), workers = True)
+else :
+    try: 
+        seed_everything(3 + int(os.environ.get('SLURM_ARRAY_TASK_ID')), workers = True)
+    except: 
+        seed_everything(3, workers = True)
 global_seed = torch.initial_seed()
 os.environ["WANDB__SERVICE_WAIT"] = "300"
 

@@ -37,6 +37,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 DEFAULTS = {
     'aef': '"false"',
     'aef_bands': '("all")',
+    'seed': '"" # empty: train.py seeds with 3 + SLURM_ARRAY_TASK_ID; set: that seed for EVERY array task',
     'new_AEF_stats': '"false" # Lite: AEF_statistics_2020_global_lite_exact.pkl (exact Lite rows) instead of the original global Lite file',
     'agb_res_all': '"false"',
     'agb_res_one': '"mean"',
@@ -620,27 +621,28 @@ for _dst, _extra in [('model/runs/nico/aef_tessera_lite.sh', {'aef': '"true"', '
 
 # Leave-one-region-out generalization runs on AGBD-Lite, for AEF vs AEF + OlmoEarth (128). Each is the in-distribution
 # launcher with geo_ablation on, so the pair differs from nico/aef_lite.sh / nico/aef_olmo_lite.sh ONLY in the held-out
-# region. Array tasks 1-3 hold out SouthAsia, Africa, SouthAmerica (seed 3+t); tasks 4-6 repeat them with a second seed.
+# region (same seed too: 4, as task 1 of the baselines). Array tasks 1-3 hold out SouthAsia, Africa, SouthAmerica; one task
+# per region, the 3-member FiLM ensemble already covers seed variation.
 # The held-out region is dropped from train AND val (dataset.lite_rows_for_region), and the AEF / OLMO inputs are
 # normalised with stats computed without it (geo_region_stats -> --stats_hold_out_region R, files
 # {AEF,OLMO}_statistics_2020_<other continents>_lite.pkl from data/agbd_lite/compute_holdout_stats.py), so nothing of R
 # reaches training. The in-distribution baselines keep the global Lite stats.
 for _dst, _src in [('model/runs/nico/aef_lite_holdout.sh', 'model/runs/nico/aef_lite.sh'),
                    ('model/runs/nico/aef_olmo_lite_holdout.sh', 'model/runs/nico/aef_olmo_lite.sh')] :
-    SPECS[_dst] = {'knobs': {**SPECS[_src]['knobs'], 'geo_ablation': '"true"', 'geo_region_stats': '"true"',
+    SPECS[_dst] = {'knobs': {**SPECS[_src]['knobs'], 'geo_ablation': '"true"', 'geo_region_stats': '"true"', 'seed': '4',
                              'geo_regions': '("SouthAsia" "Africa" "SouthAmerica") # keys of continent_to_region in dataset.py'},
-                   'sbatch': {**SPECS[_src]['sbatch'], 'sbatch_array': '1-6', 'sbatch_log': 'training-%A-%a'}}
+                   'sbatch': {**SPECS[_src]['sbatch'], 'sbatch_array': '1-3', 'sbatch_log': 'training-%A-%a'}}
 
 # In-distribution baselines for the hold-out runs, retrained with the CORRECTED global AEF Lite stats. The original
 # AEF_statistics_2020_global_lite.pkl was computed on ~7.4M prefix patches of the 281 Lite tiles, not on the 371,849 Lite
 # rows (data/aef/compute_statistics.py --lite read mapping_lite_to_og['train'] as (tile, n_patches); it is a shuffled list
 # of (tile, idx), so each tile got a random cap). The regional stats of the *_lite_holdout.sh runs are exact, so these
 # baselines differ from them only in the held-out region. Identical to nico/aef_lite.sh / nico/aef_olmo_lite.sh otherwise;
-# 2 array tasks = 2 seeds (4, 5), like the 2 seeds per region of the hold-out runs. OLMO stats unchanged (already exact).
+# single task (seed 4, as the original baselines). OLMO stats unchanged (already exact).
 for _dst, _src in [('model/runs/nico/aef_lite_newstats.sh', 'model/runs/nico/aef_lite.sh'),
                    ('model/runs/nico/aef_olmo_lite_newstats.sh', 'model/runs/nico/aef_olmo_lite.sh')] :
     SPECS[_dst] = {'knobs': {**SPECS[_src]['knobs'], 'new_AEF_stats': '"true"'},
-                   'sbatch': {**SPECS[_src]['sbatch'], 'sbatch_array': '1-2', 'sbatch_log': 'training-%A-%a'}}
+                   'sbatch': dict(SPECS[_src]['sbatch'])}
 
 TEMPLATE = r'''#!/bin/bash
 #SBATCH --nodes={sbatch_nodes}
@@ -941,8 +943,7 @@ then
     else
         region_id=1
     fi
-    # Array task t holds out regions[(t-1) % n]: with n regions, tasks 1..n are one seed and n+1..2n a second
-    # one (train.py seeds with 3 + SLURM_ARRAY_TASK_ID, so every task gets its own seed)
+    # Array task t holds out regions[(t-1) % n] (tasks n+1..2n would repeat them; the seed is 3 + t unless `seed` is set)
     hold_out_region=${{regions[$(( (region_id-1) % ${{#regions[@]}} ))]}}
     echo "Holding out region: $hold_out_region"
     if [ "$geo_region_stats" == "true" ]; then stats_hold_out_region="$hold_out_region"; else stats_hold_out_region="None"; fi
@@ -951,6 +952,10 @@ else
     stats_hold_out_region="None"
 fi
 echo "Normalisation stats: ${{stats_hold_out_region}} (None = global)"
+
+# Seed: fixed across array tasks if set (exported to train.py), else 3 + SLURM_ARRAY_TASK_ID
+seed={seed}
+if [ -n "$seed" ]; then export AGBD_SEED="$seed"; echo "Seed: $seed (same for every array task)"; fi
 
 
 # Features counts and args checks ################################################################################################
