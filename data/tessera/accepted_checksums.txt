@@ -1,0 +1,34 @@
+# TESSERA npy/v1 files on Source Cooperative whose content does not match the tile's published SHA256 file,
+# but which were inspected and accepted. Format: <sha256 of the accepted bytes>  <year/grid_X_Y/file.npy>
+# Only these exact bytes are accepted: any other mismatch, or a change to these objects, still aborts the build.
+#
+# 2019/grid_33.75_-8.75 (checked 2026-11-10): the .npy and the _scales.npy both differ from the published hashes,
+# which points at a stale SHA256 file. Sizes match manifest.parquet, repeated downloads are byte-identical. Compared
+# with the same tile in 2020 (checksum OK), in 25x25 blocks: no NaN scale, min block correlation 0.675, median 0.871,
+# best at zero shift. Control tile grid_33.85_-8.75 (checksum OK in both years): min 0.641, median 0.887.
+# Used by 457 of the 902,957 samples of the 2019 full test (0.05%).
+4e679b3c9b774eb5afa631cc7dcd08e367e2479a506f9f37074ae114e51e8d65  2019/grid_33.75_-8.75/grid_33.75_-8.75.npy
+7acc3c7d754d4f71442cb922544677b780bbe8dbbe49fd115a79767e0ccc1a60  2019/grid_33.75_-8.75/grid_33.75_-8.75_scales.npy
+#
+# 2019/grid_34.55_-10.05 (checked 2026-11-10): same situation and same checks. Against 2020 (checksum OK): no NaN scale,
+# min block correlation 0.698, median 0.908, best at zero shift. Control tile grid_34.65_-10.05 (checksum OK in both
+# years): min 0.677, median 0.871. Used by 292 samples of the 2019 full test (0.03%). A scan of all the tiles still
+# needed for 2019 at that point (1,107) found no other mismatch; the earlier tiles had passed during the build.
+68c198ddc3571894919533bb100108c3a507806965ed813e666675d8b180ec98  2019/grid_34.55_-10.05/grid_34.55_-10.05.npy
+66cd716b0c82508aa3f06620789bd7322954ea4dd721727206ea8203b089040f  2019/grid_34.55_-10.05/grid_34.55_-10.05_scales.npy
+#
+# 2020 (checked 2026-11-10): a scan of all 1,792 tiles still needed for 2020 found 3 mismatching tiles, all around
+# 33.5E 8.5S (Last-Modified July 2026). In the April TESSERA-Lite files these tiles had NO data (all-NaN scales: the old
+# geotessera route did not serve them), so there is no older version to compare against. Each one against its 2019
+# version, in 25x25 blocks (controls grid_33.65_-8.45: min 0.655, median 0.870; grid_33.75_-8.35: min 0.537, median 0.843):
+#   2020/grid_33.55_-8.55: 2019 checksum OK; min 0.690, median 0.903, best at zero shift; 148 samples
+#   2020/grid_33.85_-8.65: 2019 checksum OK; min 0.503, median 0.832, best at zero shift; 92 samples
+dad1265e00f6e94ef5ace9bf90d414a970fd6efccc0641bf752c10f879e66b10  2020/grid_33.55_-8.55/grid_33.55_-8.55.npy
+13d7c0adcb53eba04e50d5562f11476647b4abb2885f870aed5886865aeb0b15  2020/grid_33.55_-8.55/grid_33.55_-8.55_scales.npy
+5358b62371709e557c3ff58a4646a633c40d148eb8ad24d81c28c8e6c6b52117  2020/grid_33.85_-8.65/grid_33.85_-8.65.npy
+1e9c8ba83ad3f45c4f21c5e6d43cfcff9997cdde54a93078051166e06d1544c1  2020/grid_33.85_-8.65/grid_33.85_-8.65_scales.npy
+#   2020/grid_33.55_-8.25: checksum ALSO fails in 2019 (2019 version not needed by the build), so the comparison is between
+#   two unverified versions: min 0.654, median 0.898, best at zero shift; 21 samples. Accepted on the user's decision
+#   (2026-11-11), since a random corruption of either file would not keep this cross-year agreement.
+5fc586730bc04b734c90fcf12b1d6a50f14c60eb5854328ff5493443d1a33886  2020/grid_33.55_-8.25/grid_33.55_-8.25.npy
+5681710bdf3e59797842ba05469d72472a01be4b7efa4ba3a652dbe6d549d9ae  2020/grid_33.55_-8.25/grid_33.55_-8.25_scales.npy

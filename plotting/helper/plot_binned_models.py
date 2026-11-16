@@ -21,6 +21,17 @@ Run (from the repo root; colours default to DEFAULT_COLORS by --model order):
           --model benchmark_pangaea/results/20260930_080105_f8cb5c_terramind_tiny_lora_reg_upernet_agbd_agbd_test.h5 "TerraMind" \
           --out plotting/img/binned.png
 
+Poster version (Lite-trained models on the full test set; names only, no scores in the legend). Colours
+are Tol "bright", chosen so that yellow (AEF) + blue (OlmoEarth) = green (AEF + OlmoEarth); grey = baseline:
+      R=model/eval/results; f(){ echo $R/nico_film_$1-1_$1-1_$1-1_2019-2020_nooverlap.h5; }
+      python plotting/helper/plot_binned_models.py \
+          --model $(f 59684071) "AGBD features" "#555555" --model $(f 64424610) "AEF" "#DDAA33" \
+          --model $(f 19819522) "OlmoEarth" "#4477AA"     --model $(f 20004081) "AEF + OlmoEarth" "#228833" \
+          --hatch_best median --no_scores --hatch_label "Best in bin" --out plotting/img/binned_lite_fulltest_poster.png
+
+Add `--hatch_best rmse` (or mae / median) to hatch, in every bin, the box of the model that wins that bin;
+models within `--tie_tol` Mg/ha (default 1) of the winner count as tied and are hatched too.
+
 """
 
 ###################################################################################################
@@ -30,6 +41,7 @@ import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
+from matplotlib.patches import PathPatch, Patch
 import h5py
 from os import makedirs
 from os.path import dirname, abspath
@@ -77,6 +89,17 @@ def parse_arguments():
     parser.add_argument('--dpi', type=int, default=300, help='Figure DPI.')
     parser.add_argument('--ymin', type=float, default=None,
                         help='Lower y-limit of the residual panel, to make room for a tall legend (default: auto).')
+    parser.add_argument('--hatch_best', choices=['none', 'rmse', 'mae', 'median'], default='none',
+                        help='Hatch, in each bin, the box of the model that wins that bin: lowest per-bin RMSE, '
+                             'lowest MAE, or smallest |median residual|. Default none (no hatching).')
+    parser.add_argument('--tie_tol', type=float, default=1.0,
+                        help='With --hatch_best: also hatch every model whose bin score is within this many Mg/ha '
+                             'of the best, i.e. treat them as tied (default 1.0; 0 hatches the single winner).')
+    parser.add_argument('--no_scores', action='store_true',
+                        help='Legend shows model names only, without the overall scores (e.g. for a poster).')
+    parser.add_argument('--hatch_label', type=str, default=None,
+                        help='With --hatch_best: legend text for the hatch (default: a full description of the '
+                             'metric and tie tolerance; e.g. "Best in bin" for a poster).')
     args = parser.parse_args()
 
     models = []
@@ -87,7 +110,7 @@ def parse_arguments():
         color = spec[2] if len(spec) >= 3 else DEFAULT_COLORS[i % len(DEFAULT_COLORS)]
         hatch = DEFAULT_HATCHES[i % len(DEFAULT_HATCHES)]
         models.append({'path': path, 'label': label, 'color': color, 'hatch': hatch})
-    return models, args.bin_size, args.max_agb, args.out, args.dpi, args.ymin
+    return models, args.bin_size, args.max_agb, args.out, args.dpi, args.ymin, args.hatch_best, args.tie_tol, args.no_scores, args.hatch_label
 
 
 def load_residuals(path):
@@ -115,7 +138,7 @@ def overall_metrics(residuals, labels):
 
 if __name__ == "__main__":
 
-    models, bin_size, max_agb, out_path, dpi, ymin = parse_arguments()
+    models, bin_size, max_agb, out_path, dpi, ymin, hatch_best, tie_tol, no_scores, hatch_label = parse_arguments()
 
     bins = np.arange(0, max_agb + 1, bin_size)
     lbs, ubs = bins[:-1], bins[1:]
@@ -139,6 +162,22 @@ if __name__ == "__main__":
             print(f"  WARNING: per-bin counts of {m['label']} differ from {models[0]['label']} by up to "
                   f"{np.abs(m['counts'] - counts).max()} samples; the histogram shows {models[0]['label']}'s")
     print('  samples per bin:', counts.tolist())
+
+    # Per-bin winner (index into models) under the chosen metric, or None when hatching is off
+    winners = None
+    if hatch_best != 'none':
+        score = {'rmse': lambda r: np.sqrt(np.mean(r ** 2)), 'mae': lambda r: np.mean(np.abs(r)),
+                 'median': lambda r: abs(np.median(r))}[hatch_best]
+        scores = np.array([[score(m['binned'][i]) if len(m['binned'][i]) else np.inf for i in range(n_bins)]
+                           for m in models])
+        # winners[i] = indices of every model within tie_tol of the bin's best score (ties are all hatched)
+        winners = [np.flatnonzero(scores[:, i] <= scores[:, i].min() + tie_tol) for i in range(n_bins)]
+        for i in range(n_bins):
+            order = np.argsort(scores[:, i])
+            nxt = next((scores[j, i] for j in order if j not in winners[i]), np.nan)
+            print(f"  {labels_x[i]:>8s}: best {hatch_best} (tol {tie_tol:g}) = "
+                  + ', '.join(f"{models[j]['label']} ({scores[j, i]:.2f})" for j in order if j in winners[i])
+                  + f"; next {nxt:.2f}")
 
     # N boxes per bin, evenly spread inside a slot of total width 0.8 centred on the bin index
     slot = 0.8
@@ -167,6 +206,17 @@ if __name__ == "__main__":
                         capprops=dict(color=edge, linewidth=1.1),
                         medianprops=dict(color=_median_color(m['color']), linewidth=1.6))
         handles.append(bp['boxes'][0])
+        m['boxes'] = bp['boxes']
+
+    # Hatch each bin's winning box. The hatch is drawn as an unfilled overlay so its colour can contrast
+    # with the fill (white on dark, black on light); a hatch on the box itself takes the edge colour,
+    # which vanishes on dark fills.
+    if winners is not None:
+        for i, ws in enumerate(winners):
+            for w in ws:
+                box = models[w]['boxes'][i]
+                ax.add_patch(PathPatch(box.get_path(), facecolor='none', edgecolor=_median_color(models[w]['color']),
+                                       linewidth=0, hatch='///', zorder=3.5))
 
     ax.set_xticks(range(n_bins))
     ax.set_xticklabels(labels_x)
@@ -186,8 +236,16 @@ if __name__ == "__main__":
     def _num(v, fmt, best):
         txt = format(v, fmt)
         return f"$\\mathbf{{{txt}}}$" if float(txt) == best else txt
-    ax.legend(handles, [f"{m['label']}  (RMSE={_num(m['rmse'], '.1f', best_rmse)}, "
-                        f"R$^2$={_num(m['r2'], '.3f', best_r2)})" for m in models],
+    legend_labels = [m['label'] if no_scores else
+                     f"{m['label']}  (RMSE={_num(m['rmse'], '.1f', best_rmse)}, "
+                     f"R$^2$={_num(m['r2'], '.3f', best_r2)})" for m in models]
+    if winners is not None:
+        handles.append(Patch(facecolor='white', edgecolor='0.3', hatch='///'))
+        legend_labels.append(hatch_label if hatch_label is not None else
+                             {'rmse': 'Lowest RMSE in bin', 'mae': 'Lowest MAE in bin',
+                              'median': 'Median residual closest to 0'}[hatch_best]
+                             + (f' (ties within {tie_tol:g} Mg/ha)' if tie_tol > 0 else ''))
+    ax.legend(handles, legend_labels,
               frameon=True, framealpha=0.95, edgecolor='0.8', loc='lower left', ncol=1)
 
     # Reference-AGB distribution on the same bins, linear (a log axis hides how few high-AGB samples there are)

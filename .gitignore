@@ -100,3 +100,4 @@ data/aef/distribution/training_coordinates.csv
 model/wandb/*
 .aider*
 
+manuscript/*

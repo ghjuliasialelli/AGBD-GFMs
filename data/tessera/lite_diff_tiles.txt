@@ -1,0 +1,24 @@
+# TESSERA 2020 primary tiles (lon lat of the tile centre) whose rows differ from TESSERA-Lite, used by audit_full.py --lite-diff-tiles.
+# Source Cooperative npy/v1 serves a different version of these tiles than dl2.geotessera.org did in April 2026, when
+# TESSERA-Lite was built: correlation of the dequantized patches, served vs April, 0.95-0.999 (median 0.970), at the 294
+# Lite-test rows on them (checked 2026-11-11); manifest grid_mtime 2026-04-13. Nearly all Nepal (~84E 27.5N). They hold
+# 7,130 rows of the 2020 full test (0.30%) and 1,204 of 2019 (2019 has no April reference). Accepted on the user's decision:
+# the full test takes Source Cooperative's version throughout. Only tiles with Lite-test rows could be checked.
+82.85 27.55
+83.85 27.95
+84.05 27.55
+84.05 27.95
+84.15 27.65
+84.45 27.45
+84.45 27.55
+84.55 27.45
+84.65 27.65
+84.75 27.25
+84.75 27.45
+84.75 27.65
+84.85 27.65
+84.85 27.75
+84.85 27.95
+85.05 27.05
+85.05 27.75
+86.25 27.45

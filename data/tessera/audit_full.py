@@ -26,6 +26,16 @@ import numpy as np
 
 sys.path.append(str(Path(__file__).resolve().parent.parent / "olmoearth"))  # append: "download" must stay this directory's
 from audit import GEDI_KEYS, alignment_check, full_gedi, full_layout, layout_from_h5  # noqa: E402
+import download as D  # noqa: E402  (this directory's: tile geometry)
+
+
+def compare_lite_row(ea, sa, eb, sb) -> str:
+    """'same' (bit-identical), 'gap' (the Lite row has NaN where this one has data, identical elsewhere: a tile the April
+    build failed to fetch), or 'diff' (values differ where both have data)."""
+    if np.array_equal(ea, eb) and np.array_equal(sa, sb, equal_nan = True): return "same"
+    fa, fb = np.isfinite(sa), np.isfinite(sb); both = fa & fb
+    if np.array_equal(ea[both], eb[both]) and np.array_equal(sa[both], sb[both]) and not (~fa & fb).any(): return "gap"
+    return "diff"
 
 
 def parse_arguments():
@@ -37,6 +47,8 @@ def parse_arguments():
     ap.add_argument("--max-nan-frac", type = float, default = 1e-3, help = "max fraction of NaN pixels over all patches")
     ap.add_argument("--max-centre-nan", type = int, default = 0, help = "max number of samples whose centre pixel is NaN")
     ap.add_argument("--max-no-data-frac", type = float, default = 1e-3, help = "max fraction of rows whose scales are all 0, TESSERA's no-data encoding (0.05%% of TESSERA-Lite-test)")
+    ap.add_argument("--lite-diff-tiles", default = str(Path(__file__).resolve().parent / "lite_diff_tiles.txt"),
+                    help = "'lon lat' primary tiles whose rows may differ from --lite-ref (re-processed since April)")
     ap.add_argument("--n-align", type = int, default = 600, help = "samples used by the alignment check")
     ap.add_argument("--min-align-margin", type = float, default = 0.005, help = "required R^2 lead of the stored orientation")
     ap.add_argument("--allow-partial", action = "store_true", help = "debug: audit only the rows marked done")
@@ -110,9 +122,17 @@ def main() -> int:
                 keys = {key: i for i, key in enumerate(zip(*(fl[f"GEDI/{k}"][:].tolist() for k in GEDI_KEYS)))}
                 rows = [(k, keys[key]) for k, key in enumerate(zip(*(src_gedi[g].tolist() for g in GEDI_KEYS))) if done[k] and key in keys]
                 assert len(rows) > 0, "no row of this file is in the TESSERA-Lite reference"
-                differ = sum(not (np.array_equal(ft["embeddings"][a], fl["embeddings"][b]) and np.array_equal(ft["scales"][a], fl["scales"][b], equal_nan = True)) for a, b in rows)
-                print(f"TESSERA-Lite cross-check: {len(rows):,} rows at Lite coordinates ({len(keys):,} Lite coordinates), {differ:,} differ", flush = True)
-                if differ: fails.append(f"{differ} rows differ from {args.lite_ref}")
+                known = {tuple(round(float(v), 2) for v in l.split()) for l in Path(args.lite_diff_tiles).read_text().splitlines() if l.strip() and not l.startswith("#")}
+                lons, lats = D._lonlat_from_gedi(src_gedi["lat_decimal"], src_gedi["lat_offset"], src_gedi["lon_decimal"], src_gedi["lon_offset"])
+                counts = {"same": 0, "gap": 0, "known": 0, "diff": 0}
+                for a, b in rows:
+                    c = compare_lite_row(ft["embeddings"][a], ft["scales"][a], fl["embeddings"][b], fl["scales"][b])
+                    if c == "diff" and tuple(round(v, 2) for v in D.tile_from_world(float(lons[a]), float(lats[a]))) in known: c = "known"
+                    counts[c] += 1
+                print(f"TESSERA-Lite cross-check: {len(rows):,} rows at Lite coordinates ({len(keys):,} Lite coordinates): {counts['same']:,} identical, "
+                      f"{counts['gap']:,} filling April's missing tiles, {counts['known']:,} on the {len(known)} re-processed tiles of {Path(args.lite_diff_tiles).name}, "
+                      f"{counts['diff']:,} other differences", flush = True)
+                if counts["diff"]: fails.append(f"{counts['diff']} rows differ from {args.lite_ref} outside {args.lite_diff_tiles}")
 
     for f in fails: print("FAIL:", f)
     print("PASS" if not fails else f"{len(fails)} check(s) failed")
