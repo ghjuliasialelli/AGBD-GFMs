@@ -8,17 +8,23 @@
 # Array task t holds out REGIONS[t-1], the same order as the AEF / OLMO hold-out runs
 # (model/runs/nico/*_lite_holdout.sh). Seed: pangaea's default (234), as the baseline.
 #
+# Data: copied to $TMPDIR from the persistent AGBD-Lite folder on /cluster/work (as the model/ Lite launchers and the
+# full-AGBD pangaea launchers do), NOT read from /cluster/scratch (purged every few weeks; the other pangaea Lite runs
+# only survive that through auto_download from Zenodo, which would not bring back AGBD-Lite-continents.npz).
+# dataset.root_path_cluster is pointed at $TMPDIR.
+#
 # Before submitting (from the cluster pangaea-bench checkout):
 #   - the pangaea-bench changes (agbdlite.py region selection + configs/dataset/agbdlite-holdout-*.yaml) are there;
-#   - AGBD-Lite-continents.npz is in /cluster/scratch/gsialelli, next to the AGBD-Lite h5 files.
-# The launcher checks both and exits before torchrun otherwise.
+#   - AGBD-Lite-continents.npz is in DATA_DIR, next to the AGBD-Lite h5 files.
+# The launcher checks both, and the staged files, and exits before torchrun otherwise.
 
 import os
 
 path_script = os.path.dirname(os.path.abspath(__file__))
 
 REGIONS = ['SouthAsia', 'Africa', 'SouthAmerica']
-DATA_DIR = '/cluster/scratch/gsialelli' # dataset.root_path_cluster in configs/dataset/agbdlite.yaml
+DATA_DIR = '/cluster/work/igp_psr/gsialelli/Data/patches/AGBD-Lite' # = ${AGBD_CLUSTER_H5}/AGBD-Lite in config.sh
+STAGED = ['AGBD-Lite-train.h5', 'AGBD-Lite-val.h5', 'AGBD-Lite-test.h5', 'AGBD-Lite-continents.npz']
 ENCODER = 'terramind_tiny'
 BATCH_SIZE = 32 # as ../lora/gen.py DEFAULT_BATCH_SIZE
 
@@ -45,7 +51,13 @@ grep -q "test_region" pangaea/datasets/agbdlite.py || {{ echo "pangaea/datasets/
 [ -f configs/dataset/agbdlite-holdout-$REGION.yaml ] || {{ echo "configs/dataset/agbdlite-holdout-$REGION.yaml missing"; exit 1; }}
 [ -f {DATA_DIR}/AGBD-Lite-continents.npz ] || {{ echo "{DATA_DIR}/AGBD-Lite-continents.npz missing"; exit 1; }}
 
-torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=2 pangaea/run.py  --config-name=train  dataset=agbdlite-holdout-$REGION  encoder={ENCODER}  decoder=reg_upernet  preprocessing=reg_resize  criterion=mse  task=regression finetune=true lora=default batch_size={BATCH_SIZE} num_workers=6 test_num_workers=6 test_batch_size=32 use_wandb=True task.trainer.eval_interval=1 task.trainer.log_interval=100
+# Stage the data to $TMPDIR, and refuse to start on an incomplete copy.
+for f in {' '.join(STAGED)}; do
+    rclone copy {DATA_DIR}/$f ${{TMPDIR}} --transfers 16 --checkers 32
+    [ -f ${{TMPDIR}}/$f ] || {{ echo "staging: ${{TMPDIR}}/$f is missing"; exit 1; }}
+done
+
+torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=2 pangaea/run.py  --config-name=train  dataset=agbdlite-holdout-$REGION  dataset.root_path_cluster=${{TMPDIR}}  encoder={ENCODER}  decoder=reg_upernet  preprocessing=reg_resize  criterion=mse  task=regression finetune=true lora=default batch_size={BATCH_SIZE} num_workers=6 test_num_workers=6 test_batch_size=32 use_wandb=True task.trainer.eval_interval=1 task.trainer.log_interval=100
 """
 
 out = os.path.join(path_script, f'{ENCODER}_holdout.sh')

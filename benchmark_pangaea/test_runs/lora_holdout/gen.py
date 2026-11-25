@@ -7,8 +7,11 @@
 # Both go through the SAME code path: the region is set with test_overrides.dataset.test_region (redundant for the
 # held-out runs, whose config already has it), and each model keeps the normalisation stats it was trained with
 # (saved in its config.yaml). AGBD_DUMP_H5 writes the per-sample (prediction, label) pairs to
-# /cluster/scratch/gsialelli/agbd_dumps/<run>_<R>_lite_test.h5 -- compute the RMSE from those: the logged RMSE is
-# sqrt(mean of per-batch MSE), which weights a short last batch like a full one.
+# <run>_test-<R>/lite_test_<R>.h5 in the pangaea-bench checkout (persistent, unlike /cluster/scratch) -- compute the
+# RMSE from those: the logged RMSE is sqrt(mean of per-batch MSE), which weights a short last batch like a full one.
+#
+# Data: AGBD-Lite-test.h5 + AGBD-Lite-continents.npz are copied to $TMPDIR from the persistent AGBD-Lite folder on
+# /cluster/work (NOT /cluster/scratch, which is purged), and test_overrides.dataset.root_path_cluster points there.
 #
 # The training jobs already end with this test (holdout mode), so `holdout` is only needed for the dumps or a rerun.
 # Each test runs in a shadow directory <run>_test-<R> (symlinks to the run's config + checkpoints), with wandb off,
@@ -22,8 +25,8 @@ configs_file = os.path.join(path_script, '..', '..', 'configs', 'lora_holdout.tx
 
 REGIONS = ['SouthAsia', 'Africa', 'SouthAmerica']
 BASELINE = '20260922_172445_017c55_terramind_tiny_lora_reg_upernet_agbdlite' # ../../configs/lora.txt
-DATA_DIR = '/cluster/scratch/gsialelli'
-DUMP_DIR = '/cluster/scratch/gsialelli/agbd_dumps'
+DATA_DIR = '/cluster/work/igp_psr/gsialelli/Data/patches/AGBD-Lite' # = ${AGBD_CLUSTER_H5}/AGBD-Lite in config.sh
+STAGED = ['AGBD-Lite-test.h5', 'AGBD-Lite-continents.npz']
 
 
 def read_configs(path):
@@ -78,9 +81,15 @@ ln -sfn "$(realpath "$CKPT/configs")" "$SHADOW/configs"
 for f in "$CKPT"/*.pth; do ln -sfn "$(realpath "$f")" "$SHADOW/$(basename "$f")"; done
 echo "Shadow run directory: $SHADOW"
 
+# Stage the test data to $TMPDIR, and refuse to start on an incomplete copy.
+for f in {' '.join(STAGED)}; do
+    rclone copy {DATA_DIR}/$f ${{TMPDIR}} --transfers 16 --checkers 32
+    [ -f ${{TMPDIR}}/$f ] || {{ echo "staging: ${{TMPDIR}}/$f is missing"; exit 1; }}
+done
+
 # wandb OFF: the saved config has use_wandb=true and wandb_run_id = the TRAINING run's id, so run.py would resume
 # that wandb run and log this regional score as its test_RMSE, replacing the global one in the run summary.
-AGBD_DUMP_H5={DUMP_DIR}/${{CKPT}}_${{REGION}}_lite_test.h5 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=1 pangaea/run.py --config-name=test ckpt_dir=$SHADOW ++test_overrides.dataset.test_region=$REGION ++test_overrides.use_wandb=false ++test_overrides.task.trainer.use_wandb=false ++test_overrides.task.evaluator.use_wandb=false
+AGBD_DUMP_H5=$(realpath "$SHADOW")/lite_test_${{REGION}}.h5 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=1 pangaea/run.py --config-name=test ckpt_dir=$SHADOW ++test_overrides.dataset.test_region=$REGION ++test_overrides.dataset.root_path_cluster=${{TMPDIR}} ++test_overrides.use_wandb=false ++test_overrides.task.trainer.use_wandb=false ++test_overrides.task.evaluator.use_wandb=false
 """
 
 out = os.path.join(path_script, 'terramind_tiny_regions.sh')

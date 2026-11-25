@@ -19,6 +19,12 @@ echo "Holding out: $REGION"
 # Fail before torchrun if the code / data for the hold-out are missing.
 grep -q "test_region" pangaea/datasets/agbdlite.py || { echo "pangaea/datasets/agbdlite.py has no region selection: sync pangaea-bench first"; exit 1; }
 [ -f configs/dataset/agbdlite-holdout-$REGION.yaml ] || { echo "configs/dataset/agbdlite-holdout-$REGION.yaml missing"; exit 1; }
-[ -f /cluster/scratch/gsialelli/AGBD-Lite-continents.npz ] || { echo "/cluster/scratch/gsialelli/AGBD-Lite-continents.npz missing"; exit 1; }
+[ -f /cluster/work/igp_psr/gsialelli/Data/patches/AGBD-Lite/AGBD-Lite-continents.npz ] || { echo "/cluster/work/igp_psr/gsialelli/Data/patches/AGBD-Lite/AGBD-Lite-continents.npz missing"; exit 1; }
 
-torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=2 pangaea/run.py  --config-name=train  dataset=agbdlite-holdout-$REGION  encoder=terramind_tiny  decoder=reg_upernet  preprocessing=reg_resize  criterion=mse  task=regression finetune=true lora=default batch_size=32 num_workers=6 test_num_workers=6 test_batch_size=32 use_wandb=True task.trainer.eval_interval=1 task.trainer.log_interval=100
+# Stage the data to $TMPDIR, and refuse to start on an incomplete copy.
+for f in AGBD-Lite-train.h5 AGBD-Lite-val.h5 AGBD-Lite-test.h5 AGBD-Lite-continents.npz; do
+    rclone copy /cluster/work/igp_psr/gsialelli/Data/patches/AGBD-Lite/$f ${TMPDIR} --transfers 16 --checkers 32
+    [ -f ${TMPDIR}/$f ] || { echo "staging: ${TMPDIR}/$f is missing"; exit 1; }
+done
+
+torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=2 pangaea/run.py  --config-name=train  dataset=agbdlite-holdout-$REGION  dataset.root_path_cluster=${TMPDIR}  encoder=terramind_tiny  decoder=reg_upernet  preprocessing=reg_resize  criterion=mse  task=regression finetune=true lora=default batch_size=32 num_workers=6 test_num_workers=6 test_batch_size=32 use_wandb=True task.trainer.eval_interval=1 task.trainer.log_interval=100

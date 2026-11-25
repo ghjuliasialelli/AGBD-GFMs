@@ -25,7 +25,7 @@ case "$CKPT" in RUN_DIR_*) echo "configs/lora_holdout.txt still has the placehol
 echo "Mode: $MODE   region: $REGION   checkpoint: $CKPT"
 
 grep -q "test_region" pangaea/datasets/agbdlite.py || { echo "pangaea/datasets/agbdlite.py has no region selection: sync pangaea-bench first"; exit 1; }
-[ -f /cluster/scratch/gsialelli/AGBD-Lite-continents.npz ] || { echo "/cluster/scratch/gsialelli/AGBD-Lite-continents.npz missing"; exit 1; }
+[ -f /cluster/work/igp_psr/gsialelli/Data/patches/AGBD-Lite/AGBD-Lite-continents.npz ] || { echo "/cluster/work/igp_psr/gsialelli/Data/patches/AGBD-Lite/AGBD-Lite-continents.npz missing"; exit 1; }
 [ -d "$CKPT" ] || { echo "no run directory $CKPT here"; exit 1; }
 [ -f "$CKPT/configs/config.yaml" ] || { echo "$CKPT/configs/config.yaml missing"; exit 1; }
 ls "$CKPT"/*_best.pth > /dev/null 2>&1 || { echo "no *_best.pth in $CKPT"; exit 1; }
@@ -39,6 +39,12 @@ ln -sfn "$(realpath "$CKPT/configs")" "$SHADOW/configs"
 for f in "$CKPT"/*.pth; do ln -sfn "$(realpath "$f")" "$SHADOW/$(basename "$f")"; done
 echo "Shadow run directory: $SHADOW"
 
+# Stage the test data to $TMPDIR, and refuse to start on an incomplete copy.
+for f in AGBD-Lite-test.h5 AGBD-Lite-continents.npz; do
+    rclone copy /cluster/work/igp_psr/gsialelli/Data/patches/AGBD-Lite/$f ${TMPDIR} --transfers 16 --checkers 32
+    [ -f ${TMPDIR}/$f ] || { echo "staging: ${TMPDIR}/$f is missing"; exit 1; }
+done
+
 # wandb OFF: the saved config has use_wandb=true and wandb_run_id = the TRAINING run's id, so run.py would resume
 # that wandb run and log this regional score as its test_RMSE, replacing the global one in the run summary.
-AGBD_DUMP_H5=/cluster/scratch/gsialelli/agbd_dumps/${CKPT}_${REGION}_lite_test.h5 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=1 pangaea/run.py --config-name=test ckpt_dir=$SHADOW ++test_overrides.dataset.test_region=$REGION ++test_overrides.use_wandb=false ++test_overrides.task.trainer.use_wandb=false ++test_overrides.task.evaluator.use_wandb=false
+AGBD_DUMP_H5=$(realpath "$SHADOW")/lite_test_${REGION}.h5 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=1 pangaea/run.py --config-name=test ckpt_dir=$SHADOW ++test_overrides.dataset.test_region=$REGION ++test_overrides.dataset.root_path_cluster=${TMPDIR} ++test_overrides.use_wandb=false ++test_overrides.task.trainer.use_wandb=false ++test_overrides.task.evaluator.use_wandb=false
