@@ -1,0 +1,10 @@
+# Trained-run output directory names for the leave-one-region-out LoRA runs
+# (train_runs/lora_holdout/ -> dataset=agbdlite-holdout-<R>), read by test_runs/lora_holdout/gen.py.
+#
+# ONE LINE PER HELD-OUT REGION, IN THIS ORDER: SouthAsia, Africa, SouthAmerica (= array task 1, 2, 3).
+# Replace each placeholder with the run directory printed by run.py (it ends in _agbdlite-holdout-<R>).
+# Blank lines and lines starting with '#' are ignored.
+
+RUN_DIR_SouthAsia
+RUN_DIR_Africa
+RUN_DIR_SouthAmerica

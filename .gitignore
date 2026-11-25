@@ -101,3 +101,5 @@ model/wandb/*
 .aider*
 
 manuscript/*
+
+experiments/aef_leakage/data/*.np[yz]
