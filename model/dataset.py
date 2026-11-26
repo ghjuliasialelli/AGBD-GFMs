@@ -148,10 +148,10 @@ def initialize_index_lite(fname, chunk_size, path_h5, mode = None) :
 
 def lite_stats_fname(prefix, stats_hold_out_region, stats_keep_region, exact_global = False) :
     """
-    AGBD-Lite stats file for the AEF / OLMO embeddings (regional + exact global ones: data/agbd_lite/compute_holdout_stats.py).
+    AGBD-Lite stats file for the AEF / OLMO / TESSERA embeddings (regional + exact global ones: data/agbd_lite/compute_holdout_stats.py).
 
     Args:
-    - prefix (str): 'AEF' or 'OLMO'
+    - prefix (str): 'AEF', 'OLMO' or 'TESSERA'
     - stats_hold_out_region (str or None): None for the global Lite stats, else a key of continent_to_region
     - stats_keep_region (bool): stats of that region only (True) or of its complement (False)
     - exact_global (bool): for the global stats, use the _exact file (computed on exactly the Lite train rows; for AEF
@@ -851,8 +851,9 @@ class GEDIDataset(Dataset):
             if self.lite_and_test : # stop before anything runs if the full AGBD test set has not been built yet
                 missing = [fname for fname in (f'TESSERA-test-{year}.h5' for year in self.years) if not exists(join(self.tessera_h5_path, fname))]
                 if missing : raise FileNotFoundError(f"Full AGBD test set for TESSERA not found in {self.tessera_h5_path}: missing {missing}. Evaluate on AGBD-Lite instead (the -Lite.sh launcher), or build these files first.")
-            if self.stats_hold_out_region : raise NotImplementedError("No region-specific TESSERA-Lite stats: data/agbd_lite/compute_holdout_stats.py has no TESSERA pass yet.")
-            tessera_stats_fname = "TESSERA_statistics_2020_global_lite.pkl" # the train stats, also for the full test set
+            # the train stats, also for the full test set; regional files from data/agbd_lite/compute_holdout_stats.py --features tessera
+            # (TESSERA_statistics_2020_global_lite.pkl was computed on the whole TESSERA-Lite-train.h5, so it is exact already)
+            tessera_stats_fname = lite_stats_fname('TESSERA', self.stats_hold_out_region, self.stats_keep_region)
             print(f'Using file: {tessera_stats_fname} for TESSERA normalization values.')
             with open(join(self.tessera_norm_path, tessera_stats_fname), mode = 'rb') as f:
                 self.norm_values['TESSERA'] = pickle.load(f)

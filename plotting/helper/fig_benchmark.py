@@ -2,7 +2,8 @@
 """
 Benchmark figure replacing Table 1 (AGB estimation with GFMs).
 
-(a) Lite dataset, every GFM with the same UPerNet decoder. AEF and TESSERA
+(a) Lite dataset, every GFM with the same UPerNet decoder (except OlmoEarth,
+    LP / MLP / fcn_film only). AEF, OlmoEarth and TESSERA
     are frozen embeddings: their row shows the head progression
     LP -> MLP -> UPerNet, the way GFM rows show frozen -> LoRA -> +SAR/MT.
 (b) Full dataset, one row each for AEF (LP -> MLP -> fcn_film), AEF+, and TerraMind
@@ -40,6 +41,9 @@ from matplotlib.transforms import ScaledTranslation, blended_transform_factory
 MODELS_A = {
     "AEF":         dict(lp=57.34, mlp=53.91, frozen=53.71, film=53.70),
     "TESSERA":     dict(lp=66.86, mlp=59.79, frozen=57.12, film=56.43),
+    # OlmoEarth v1.3 embeddings (128-d), no UPerNet run: LP 19706977, MLP 19819512,
+    # fcn_film 19819522 (Experiments.xlsx, 2026-11-25)
+    "OlmoEarth":   dict(lp=59.33, mlp=54.14, film=53.68),
     "SSL4EO-MoCo": dict(frozen=64.34, lora=63.05),
     "Prithvi":     dict(frozen=76.17, lora=70.91, mt=71.98),
     "Prithvi v2":  dict(frozen=66.43, lora=64.89, mt=64.08),
@@ -163,7 +167,8 @@ def draw_zoom(ax, rows):
     y0 = names.index(ZOOM_ROW)
     d = rows[y0][1]
     keys = [k for k in ZOOM_KEYS if d.get(k) is not None]
-    best = min(d[k] for k in keys)
+    # bold only if it is the best value of the whole panel (as on the main rows)
+    best = min(min(_vals(r[1])) for r in rows)
     keys.sort(key=lambda k: -d[k])                 # worse (left) -> better
     x0, w, h = ZOOM_BOUNDS
     yc = ax.transAxes.inverted().transform(ax.transData.transform((0, y0)))[1]

@@ -619,16 +619,17 @@ for _dst, _extra in [('model/runs/nico/aef_tessera_lite.sh', {'aef': '"true"', '
     SPECS[_dst] = {'knobs': {**SPECS['model/runs/nico/olmo_lite.sh']['knobs'], 'tessera': '"true"', **_extra},
                    'sbatch': dict(SPECS['model/runs/nico/olmo_lite.sh']['sbatch'])}
 
-# Leave-one-region-out generalization runs on AGBD-Lite, for AEF vs AEF + OlmoEarth (128). Each is the in-distribution
-# launcher with geo_ablation on, so the pair differs from nico/aef_lite.sh / nico/aef_olmo_lite.sh ONLY in the held-out
-# region (same seed too: 4, as task 1 of the baselines). Array tasks 1-3 hold out SouthAsia, Africa, SouthAmerica; one task
+# Leave-one-region-out generalization runs on AGBD-Lite, for AEF, AEF + OlmoEarth (128) and TESSERA (added 2026-11-25,
+# baseline 64466721-1). Each is the in-distribution launcher with geo_ablation on, so it differs from nico/aef_lite.sh /
+# nico/aef_olmo_lite.sh / nico/tessera_lite.sh ONLY in the held-out region (same seed too: 4, as task 1 of the baselines). Array tasks 1-3 hold out SouthAsia, Africa, SouthAmerica; one task
 # per region, the 3-member FiLM ensemble already covers seed variation.
 # The held-out region is dropped from train AND val (dataset.lite_rows_for_region), and the AEF / OLMO inputs are
 # normalised with stats computed without it (geo_region_stats -> --stats_hold_out_region R, files
-# {AEF,OLMO}_statistics_2020_<other continents>_lite.pkl from data/agbd_lite/compute_holdout_stats.py), so nothing of R
+# {AEF,OLMO,TESSERA}_statistics_2020_<other continents>_lite.pkl from data/agbd_lite/compute_holdout_stats.py), so nothing of R
 # reaches training. The in-distribution baselines keep the global Lite stats.
 for _dst, _src in [('model/runs/nico/aef_lite_holdout.sh', 'model/runs/nico/aef_lite.sh'),
-                   ('model/runs/nico/aef_olmo_lite_holdout.sh', 'model/runs/nico/aef_olmo_lite.sh')] :
+                   ('model/runs/nico/aef_olmo_lite_holdout.sh', 'model/runs/nico/aef_olmo_lite.sh'),
+                   ('model/runs/nico/tessera_lite_holdout.sh', 'model/runs/nico/tessera_lite.sh')] :
     SPECS[_dst] = {'knobs': {**SPECS[_src]['knobs'], 'geo_ablation': '"true"', 'geo_region_stats': '"true"', 'seed': '4',
                              'geo_regions': '("SouthAsia" "Africa" "SouthAmerica") # keys of continent_to_region in dataset.py'},
                    'sbatch': {**SPECS[_src]['sbatch'], 'sbatch_array': '1-3', 'sbatch_log': 'training-%A-%a'}}

@@ -1,6 +1,6 @@
 """
 
-Region-excluded AEF / OlmoEarth normalisation statistics on the AGBD-Lite train set, for the leave-one-region-out
+Region-excluded AEF / OlmoEarth / TESSERA normalisation statistics on the AGBD-Lite train set, for the leave-one-region-out
 Lite runs (model/runs/nico/*_lite_holdout.sh).
 
 One pass over the Lite train rows: each row is assigned to its (tile-based) continent with the SAME helper the model
@@ -17,6 +17,7 @@ exact-rows global stats are from it; OLMO (row-aligned with Lite) must reproduce
 Output (into --out_dir, default: the AEF / OLMO stats folders from config.sh), named like the full-AGBD complements:
     AEF_statistics_2020_<kept continents>_lite.pkl     e.g. AEF_statistics_2020_Europe-Australasia-Africa-NorthAmerica-SouthAmerica_lite.pkl
     OLMO_statistics_2020_<kept continents>_lite.pkl
+    TESSERA_statistics_2020_<kept continents>_lite.pkl   (TESSERA-Lite-train.h5 is row-aligned with Lite, like OLMO)
 which is what model/dataset.py loads for a Lite model with --stats_hold_out_region R (--stats_keep_region false).
 
 Also --write_global: <PREFIX>_statistics_2020_global_lite_exact.pkl, the global stats on exactly the Lite train rows
@@ -24,6 +25,7 @@ Also --write_global: <PREFIX>_statistics_2020_global_lite_exact.pkl, the global 
 
 Run (local; AEF ~1h, OLMO ~1.5h, CPU-bound):
     .venv/bin/python data/agbd_lite/compute_holdout_stats.py --exclude SouthAsia Africa SouthAmerica --check_global --write_global
+    .venv/bin/python data/agbd_lite/compute_holdout_stats.py --features tessera --check_global   # TESSERA (global file is exact already)
 
 env: .venv (imports model/dataset.py)
 
@@ -52,7 +54,7 @@ from audit import dequantize as olmo_dequantize # int8 -> float32, NaN at nodata
 
 CONTINENTS = ["Europe", "SouthAsia", "Australasia", "Africa", "NorthAmerica", "SouthAmerica"] # order of the file names
 AEF_NODATA = -128
-AEF_DIMS, OLMO_DIMS = 64, 128
+AEF_DIMS, OLMO_DIMS, TESSERA_DIMS = 64, 128, 128
 BATCH = 2_000
 
 ###################################################################################################
@@ -165,6 +167,29 @@ def olmo_pass(paths, label) :
     print()
     return stats
 
+
+def tessera_pass(paths, label) :
+    """
+    Per-continent TESSERA stats. TESSERA-Lite-train.h5 is row-aligned with the Lite train set (asserted below on the
+    GEDI lat/lon, row by row). Dequantised exactly as data/tessera/compute_statistics.py, which wrote
+    TESSERA_statistics_2020_global_lite.pkl from this whole file: emb * scale, NaN scales propagate and the nan-stats
+    skip them; the scale == 0 no-data rows stay zeros, as there.
+    """
+    stats = [init_stats(TESSERA_DIMS) for _ in CONTINENTS]
+    with h5py.File(join(paths['tessera_h5'], 'TESSERA-Lite-train.h5'), 'r') as f, \
+         h5py.File(join(paths['h5'], 'AGBD-Lite', 'AGBD-Lite-train.h5'), 'r') as g :
+        emb, scl = f['embeddings'], f['scales']
+        assert emb.shape[0] == len(label), f'TESSERA-Lite-train has {emb.shape[0]} rows, Lite train has {len(label)}'
+        for k in ('lat_decimal', 'lat_offset', 'lon_decimal', 'lon_offset') :
+            assert np.array_equal(f['GEDI'][k][:], g['GEDI'][k][:]), f'TESSERA-Lite-train is not row-aligned with AGBD-Lite-train ({k})'
+        for s in range(0, emb.shape[0], BATCH) :
+            data = emb[s : s + BATCH].astype(np.float32) * scl[s : s + BATCH][..., None] # (b, 25, 25, 128)
+            lab = label[s : s + BATCH]
+            for ci in np.unique(lab) : stats[ci] = update_stats(stats[ci], data[lab == ci])
+            print(f'\r  TESSERA {min(s + BATCH, emb.shape[0]):>8,d} / {emb.shape[0]:,d}', end = '', flush = True)
+    print()
+    return stats
+
 ###################################################################################################
 # Main
 
@@ -178,8 +203,8 @@ if __name__ == '__main__' :
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--exclude', nargs = '*', default = ['SouthAsia', 'Africa', 'SouthAmerica'], choices = CONTINENTS)
-    parser.add_argument('--features', nargs = '+', default = ['aef', 'olmo'], choices = ['aef', 'olmo'])
-    parser.add_argument('--out_dir', default = None, help = 'Write all files here (default: AEF / OLMO stats folders).')
+    parser.add_argument('--features', nargs = '+', default = ['aef', 'olmo'], choices = ['aef', 'olmo', 'tessera'])
+    parser.add_argument('--out_dir', default = None, help = 'Write all files here (default: AEF / OLMO / TESSERA stats folders).')
     parser.add_argument('--check_global', action = 'store_true', help = 'Compare the pooled global stats to the existing *_2020_global_lite.pkl.')
     parser.add_argument('--write_global', action = 'store_true', help = 'Also write the pooled stats over ALL Lite train rows as <PREFIX>_statistics_2020_global_lite_exact.pkl (model flag --new_AEF_stats).')
     parser.add_argument('--overwrite', action = 'store_true')
@@ -192,8 +217,10 @@ if __name__ == '__main__' :
 
     for feat in args.features :
         print(f'\n== {feat.upper()} ==')
-        per_cont = aef_pass(paths, lite_to_og, label) if feat == 'aef' else olmo_pass(paths, label)
-        prefix, stats_dir = ('AEF', paths['aef_norm']) if feat == 'aef' else ('OLMO', paths['olmo_norm'])
+        per_cont = {'aef': lambda : aef_pass(paths, lite_to_og, label), 'olmo': lambda : olmo_pass(paths, label),
+                    'tessera': lambda : tessera_pass(paths, label)}[feat]()
+        prefix, stats_dir = {'aef': ('AEF', paths['aef_norm']), 'olmo': ('OLMO', paths['olmo_norm']),
+                             'tessera': ('TESSERA', paths['tessera_norm'])}[feat]
         out_dir = args.out_dir or stats_dir
         with open(join(out_dir, f'{prefix}_lite_train_per_continent_partials.pkl'), 'wb') as f : # any other combination later, without re-reading
             pickle.dump({'continents': CONTINENTS, 'partials': per_cont}, f)

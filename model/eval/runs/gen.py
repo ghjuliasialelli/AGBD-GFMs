@@ -145,6 +145,8 @@ REGION_SPECS = [
     ("nico_aef_olmo_lite_newstats",   "nico_film", "ens_aef_olmo_lite_newstats", "fixed"),
     ("nico_aef_lite",                 "nico_film", "ens_aef_lite",               "fixed"),
     ("nico_aef_olmo_lite",            "nico_film", "ens_aef_olmo_lite",          "fixed"),
+    ("nico_tessera_lite_holdout",     "nico_film", "tessera_lite_holdout",       "holdout"),  # added 2026-11-25
+    ("nico_tessera_lite",             "nico_film", "ens_tessera_lite",           "fixed"),    # baseline 64466721-1
 ]
 
 # @ARCH@ / @CONFIG@ / @MODE@ are substituted with str.replace (the bash below is full of braces, so no str.format).

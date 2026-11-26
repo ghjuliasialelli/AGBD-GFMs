@@ -1,0 +1,9 @@
+# Run-directory names of the full-AGBD geographic generalization runs (trainfull_runs/lora_holdout/), read by
+# testfull_runs/lora_holdout/gen.py. Order: cross SouthAsia, Africa, SouthAmerica; then within SouthAsia, Africa, SouthAmerica.
+# Names end in _agbd-<cross|within>-<Region>.
+RUN_DIR_cross_SouthAsia
+RUN_DIR_cross_Africa
+RUN_DIR_cross_SouthAmerica
+RUN_DIR_within_SouthAsia
+RUN_DIR_within_Africa
+RUN_DIR_within_SouthAmerica

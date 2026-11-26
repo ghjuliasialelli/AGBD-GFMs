@@ -1,0 +1,5 @@
+# Run-directory names of the full-AGBD temporal generalization runs (trainfull_runs/lora_holdout/terramind_tiny_temporal.sh),
+# read by testfull_runs/lora_holdout/gen.py. Order: crossyear (train 2019), withinyear (train 2020).
+# Names end in _agbd-crossyear / _agbd-withinyear.
+RUN_DIR_crossyear
+RUN_DIR_withinyear
